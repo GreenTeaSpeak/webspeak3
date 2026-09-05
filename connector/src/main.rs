@@ -26,6 +26,7 @@ use tsclientlib::{
 	data, ChannelGroupId, ChannelId, ClientDbId, ClientId, CodecEncryptionMode, Connection,
 	DisconnectOptions, HostBannerMode, HostMessageMode, Identity, InMessage, MaxClients,
 	MessageHandle, MessageTarget, Permission, Reason, ServerGroupId, StreamItem, TextMessageTargetMode,
+	TsError,
 };
 use tsproto_packets::packets::{AudioData, CodecType, Direction, Flags, OutAudio, OutCommand, PacketType};
 
@@ -215,6 +216,11 @@ enum Event {
 	Disconnected { reason: String },
 	#[serde(rename = "error")]
 	Error { message: String },
+	/// A "switch" to a password-protected channel was rejected because no (or
+	/// the wrong) password was supplied. The frontend should prompt for a
+	/// password and retry with it rather than showing a generic error.
+	#[serde(rename = "channelPasswordRequired")]
+	ChannelPasswordRequired { channel_id: u64 },
 	/// Server-tab log notification (client join/leave/switch, channel group
 	/// assignment, channel/server changes, own permission errors).
 	#[serde(rename = "serverLog")]
@@ -698,6 +704,10 @@ async fn run(args: Args) -> Result<()> {
 	// `send_with_result()` for text messages gets us a `MessageResult` event we
 	// can surface as a visible error instead of the message just vanishing.
 	let mut pending_messages: HashMap<MessageHandle, String> = HashMap::new();
+	// Tracks which channel a pending "Channel switch" MessageResult is for, so
+	// a ChannelInvalidPassword failure can be reported as ChannelPasswordRequired
+	// for that specific channel instead of a generic error.
+	let mut pending_switch_channel: HashMap<MessageHandle, u64> = HashMap::new();
 	// When non-empty, outgoing voice is whispered to just these channels/clients
 	// instead of being sent to the current channel - set via the "whisper "
 	// stdin command, cleared via "unwhisper".
@@ -790,21 +800,38 @@ async fn run(args: Args) -> Result<()> {
 						emit(&Event::Disconnected { reason: "client requested".into() });
 						break;
 					} else if let Some(rest) = l.strip_prefix("switch ") {
-						match rest.trim().parse::<u64>() {
+						// "switch <id>" or "switch <id> <base64-encoded password>" - the
+						// password travels base64-encoded since this is a line-based
+						// stdin protocol and a password could contain spaces/newlines.
+						let mut switch_args = rest.trim().splitn(2, ' ');
+						let id_arg = switch_args.next().unwrap_or("");
+						let password_arg = switch_args.next();
+						match id_arg.parse::<u64>() {
 							Ok(id) => {
+								let password = password_arg.and_then(|p| {
+									base64::engine::general_purpose::STANDARD
+										.decode(p)
+										.ok()
+										.and_then(|bytes| String::from_utf8(bytes).ok())
+								});
 								let part = {
 									let state = con.get_state()?;
 									let own = &state.clients[&state.own_client];
-									own.client_move(ChannelId(id))
+									let mv = own.client_move(ChannelId(id));
+									match &password {
+										Some(pwd) => mv.set_password(pwd),
+										None => mv,
+									}
 								};
 								match part.send_with_result(&mut con) {
 									Ok(handle) => {
 										pending_messages.insert(handle, "Channel switch".into());
+										pending_switch_channel.insert(handle, id);
 									}
 									Err(e) => emit(&Event::Error { message: e.to_string() }),
 								}
 							}
-							Err(_) => emit(&Event::Error { message: format!("Invalid channel id: {rest}") }),
+							Err(_) => emit(&Event::Error { message: format!("Invalid channel id: {id_arg}") }),
 						}
 					} else if let Some(message) = l.strip_prefix("chat ") {
 						let part = OutSendTextMessagePart {
@@ -1951,8 +1978,15 @@ async fn run(args: Args) -> Result<()> {
 				}
 				Some(Ok(StreamItem::MessageResult(handle, result))) => {
 					if let Some(label) = pending_messages.remove(&handle) {
+						let switch_channel_id = pending_switch_channel.remove(&handle);
 						if let Err(e) = result {
-							if e.missing_permission.is_some() {
+							if label == "Channel switch" && e.error == TsError::ChannelInvalidPassword {
+								if let Some(channel_id) = switch_channel_id {
+									emit(&Event::ChannelPasswordRequired { channel_id });
+								} else {
+									emit(&Event::Error { message: format!("{label} failed: {e}") });
+								}
+							} else if e.missing_permission.is_some() {
 								emit(&Event::ServerLog {
 									entry: ServerLogEntry::PermissionError { action: label },
 								});

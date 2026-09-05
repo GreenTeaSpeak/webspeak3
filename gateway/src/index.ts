@@ -79,7 +79,7 @@ wss.on("connection", (socket: WebSocket) => {
         break;
       }
       case "switchChannel": {
-        await connection?.switchChannel(msg.channelId);
+        await connection?.switchChannel(msg.channelId, msg.channelPassword);
         break;
       }
       case "sendChatMessage": {

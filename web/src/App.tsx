@@ -56,7 +56,7 @@ import { parseSoundpack } from "./soundpack";
 // gateway/src/index.ts), so that path always gets appended here - a
 // VITE_GATEWAY_URL override only needs to name the host, not the path.
 const GATEWAY_URL = import.meta.env.DEV
-  ? "ws://localhost:8080"
+  ? "ws://localhost:8080/ws"
   : import.meta.env.VITE_GATEWAY_URL
     ? `${import.meta.env.VITE_GATEWAY_URL.replace(/\/$/, "")}/ws`
     : `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}/ws`;
@@ -145,12 +145,13 @@ const DESIGN_THEME_KEY = "webspeak3:design-theme";
 const DESIGN_SELECTION_KEY = "webspeak3:design-selection";
 const CUSTOM_THEMES_KEY = "webspeak3:custom-themes";
 
-type DesignTheme = "standard" | "nova";
+type DesignTheme = "standard" | "nova" | "pulse";
 
 /** A user-authored theme package: a name, which built-in layout it behaves like
- *  (Standard's plain chrome vs Nova's collapsed menu/splash behavior), and raw CSS
- *  that gets injected while it's active - free-form, so it can restyle or even
- *  reflow the existing markup (e.g. via flex `order`, `display:none`, overlays). */
+ *  (Standard's plain chrome, Nova's collapsed menu/splash behavior, or Pulse's
+ *  card/sidebar layout), and raw CSS that gets injected while it's active -
+ *  free-form, so it can restyle or even reflow the existing markup (e.g. via
+ *  flex `order`, `display:none`, overlays). */
 type CustomTheme = {
   id: string;
   name: string;
@@ -159,7 +160,8 @@ type CustomTheme = {
 };
 
 function loadDesignTheme(): DesignTheme {
-  return localStorage.getItem(DESIGN_THEME_KEY) === "nova" ? "nova" : "standard";
+  const raw = localStorage.getItem(DESIGN_THEME_KEY);
+  return raw === "nova" || raw === "pulse" ? raw : "standard";
 }
 
 function loadCustomThemes(): CustomTheme[] {
@@ -173,7 +175,7 @@ function loadCustomThemes(): CustomTheme[] {
         v &&
         typeof v.id === "string" &&
         typeof v.name === "string" &&
-        (v.baseTheme === "standard" || v.baseTheme === "nova") &&
+        (v.baseTheme === "standard" || v.baseTheme === "nova" || v.baseTheme === "pulse") &&
         typeof v.css === "string"
     );
   } catch {
@@ -678,6 +680,46 @@ function ChannelTree({
   );
 }
 
+/** Pulse-theme-only: a row of avatar tiles for everyone in the player's current
+ *  channel, with a highlighted ring on whoever is currently talking - the
+ *  "who's speaking" strip from the reference client's connected view. Purely
+ *  derived from state ChannelTree already has (own channel + `talkers`), no
+ *  new backend data needed. */
+function SpeakingNowBar({
+  clients,
+  talkers,
+  ownClientId,
+}: {
+  clients: ClientInfo[];
+  talkers: Set<number>;
+  ownClientId: number | null;
+}) {
+  const own = clients.find((c) => c.id === ownClientId);
+  if (!own) return null;
+  const channelClients = clients.filter((c) => c.channel === own.channel);
+  if (channelClients.length === 0) return null;
+
+  return (
+    <div className="ts-speaking-now">
+      {channelClients.map((c) => (
+        <div
+          key={c.id}
+          className={`ts-speaking-now-tile${talkers.has(c.id) ? " ts-speaking-now-tile-active" : ""}`}
+          title={c.name}
+        >
+          <span
+            className="ts-speaking-now-avatar"
+            style={{ background: c.id === ownClientId ? "var(--accent)" : clientAvatarColor(c.name) }}
+          >
+            {c.name.trim().charAt(0).toUpperCase() || "?"}
+          </span>
+          <span className="ts-speaking-now-name">{c.name}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function InfoPanel({
   selected,
   host,
@@ -1014,6 +1056,59 @@ function ConnectDialog({
           </div>
         </div>
         {dialogBody}
+      </div>
+    </div>
+  );
+}
+
+function ChannelPasswordDialog({
+  channelName,
+  wrongPassword,
+  onSubmit,
+  onCancel,
+}: {
+  channelName: string;
+  wrongPassword: boolean;
+  onSubmit: (password: string) => void;
+  onCancel: () => void;
+}) {
+  const t = useT();
+  const [password, setPassword] = useState("");
+  const backdrop = { onClick: onCancel };
+  return (
+    <div className="ts-dialog-backdrop" {...backdrop}>
+      <div className="ts-dialog ts-channel-password-dialog" onClick={(e) => e.stopPropagation()}>
+        <div className="ts-dialog-titlebar">
+          <span>{t("channelPasswordDialog.title")}</span>
+        </div>
+        <div className="ts-dialog-body">
+          <p>
+            {wrongPassword ? t("channelPasswordDialog.wrongPassword") : t("channelPasswordDialog.prompt")}
+            {channelName ? ` (${channelName})` : ""}
+          </p>
+          <label className="ts-dialog-field ts-dialog-field-grow">
+            <input
+              type="password"
+              autoFocus
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") onSubmit(password);
+                if (e.key === "Escape") onCancel();
+              }}
+            />
+          </label>
+        </div>
+        <div className="ts-dialog-buttons">
+          <div className="ts-dialog-buttons-right">
+            <button type="button" onClick={onCancel}>
+              {t("channelPasswordDialog.cancel")}
+            </button>
+            <button type="button" onClick={() => onSubmit(password)}>
+              {t("channelPasswordDialog.submit")}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -3648,6 +3743,7 @@ function DesignPanel({
   const builtins: { id: DesignTheme; name: string; desc: string }[] = [
     { id: "standard", name: t("design.theme.standard"), desc: t("design.theme.standard.desc") },
     { id: "nova", name: t("design.theme.nova"), desc: t("design.theme.nova.desc") },
+    { id: "pulse", name: t("design.theme.pulse"), desc: t("design.theme.pulse.desc") },
   ];
 
   const handleSaveEditing = () => {
@@ -3680,7 +3776,7 @@ function DesignPanel({
       if (
         !parsed ||
         typeof parsed.name !== "string" ||
-        (parsed.baseTheme !== "standard" && parsed.baseTheme !== "nova") ||
+        (parsed.baseTheme !== "standard" && parsed.baseTheme !== "nova" && parsed.baseTheme !== "pulse") ||
         typeof parsed.css !== "string"
       ) {
         window.alert(t("design.custom.importError"));
@@ -3710,6 +3806,7 @@ function DesignPanel({
           >
             <option value="standard">{t("design.theme.standard")}</option>
             <option value="nova">{t("design.theme.nova")}</option>
+            <option value="pulse">{t("design.theme.pulse")}</option>
           </select>
         </label>
         <label className="ts-options-field">
@@ -3760,7 +3857,11 @@ function DesignPanel({
               <span className="ts-design-theme-swatch ts-design-theme-swatch-custom" />
               <span className="ts-design-theme-card-name">{theme.name}</span>
               <span className="ts-design-theme-card-desc">
-                {theme.baseTheme === "nova" ? t("design.theme.nova") : t("design.theme.standard")}
+                {theme.baseTheme === "nova"
+                  ? t("design.theme.nova")
+                  : theme.baseTheme === "pulse"
+                  ? t("design.theme.pulse")
+                  : t("design.theme.standard")}
               </span>
             </button>
             <div className="ts-design-theme-card-actions">
@@ -4404,6 +4505,13 @@ function AppInner() {
   const [serverPassword, setServerPassword] = useState("");
   const [channelPassword, setChannelPassword] = useState("");
   const [defaultChannel, setDefaultChannel] = useState("");
+  // Prompt shown when switching into a password-protected channel mid-session
+  // (the initial-connect "default channel" password above is a separate field).
+  const [channelPasswordPrompt, setChannelPasswordPrompt] = useState<{
+    channelId: number;
+    channelName: string;
+    wrongPassword: boolean;
+  } | null>(null);
   const [connectDialogOpen, setConnectDialogOpen] = useState(false);
   const [connectDialogExpanded, setConnectDialogExpanded] = useState(false);
   const [log, setLog] = useState<LogEntry[]>([]);
@@ -4510,7 +4618,13 @@ function AppInner() {
   // Structural base - everywhere else in the app that branches on "nova" behavior
   // (splash, hamburger menu, ...) keeps working unchanged, whether that behavior
   // came from picking Nova directly or from a custom theme built on top of it.
-  const designTheme: DesignTheme = activeCustomTheme ? activeCustomTheme.baseTheme : designSelection === "nova" ? "nova" : "standard";
+  const designTheme: DesignTheme = activeCustomTheme
+    ? activeCustomTheme.baseTheme
+    : designSelection === "nova"
+    ? "nova"
+    : designSelection === "pulse"
+    ? "pulse"
+    : "standard";
   const handleDesignSelectionChange = (next: string) => {
     setDesignSelection(next);
     localStorage.setItem(DESIGN_SELECTION_KEY, next);
@@ -4518,7 +4632,9 @@ function AppInner() {
       ? customThemes.find((th) => `custom:${th.id}` === next)?.baseTheme ?? "standard"
       : next === "nova"
         ? "nova"
-        : "standard";
+        : next === "pulse"
+          ? "pulse"
+          : "standard";
     localStorage.setItem(DESIGN_THEME_KEY, base);
   };
   const handleSaveCustomTheme = (nextTheme: CustomTheme) => {
@@ -4622,6 +4738,9 @@ function AppInner() {
   const [recording, setRecording] = useState(false);
   const whisperLogIdRef = useRef(0);
   const prevWhisperTargetsRef = useRef<{ channels: Set<number>; clients: Set<number> } | null>(null);
+  // Channel passwords entered this session, so re-entering a channel already
+  // unlocked doesn't prompt again. In-memory only - cleared on disconnect.
+  const channelPasswordCacheRef = useRef<Map<number, string>>(new Map());
 
   const logClient = (level: LogLevel, category: string, message: string) => {
     const entry: ClientLogEntry = { id: ++logIdRef.current, timestamp: Date.now(), category, level, message };
@@ -5052,11 +5171,26 @@ function AppInner() {
           setTalkers(new Set());
           setWhisperLog([]);
           prevWhisperTargetsRef.current = null;
+          setChannelPasswordPrompt(null);
+          channelPasswordCacheRef.current.clear();
           stopMic();
           stopRecording();
           appendLog({ text: `Disconnected: ${data.reason}`, kind: "info" });
           logClient("info", "Connection", `Disconnected: ${data.reason}`);
           if (wasConnected) void playSound("disconnect");
+          break;
+        }
+        case "channelPasswordRequired": {
+          // A cached password just got rejected (channel password changed,
+          // or was wrong) - drop it so the next auto-switch doesn't reuse it.
+          channelPasswordCacheRef.current.delete(data.channelId);
+          setChannelPasswordPrompt((prev) => ({
+            channelId: data.channelId,
+            // `channels` here can be stale (this handler's closure is fixed at
+            // connect time) - the dialog falls back to showing just the id.
+            channelName: channels.find((c) => c.id === data.channelId)?.name ?? "",
+            wrongPassword: prev?.channelId === data.channelId,
+          }));
           break;
         }
         case "error":
@@ -5748,9 +5882,19 @@ function AppInner() {
     audioPlayerRef.current?.playTestTone();
   };
 
-  const handleSwitchChannel = (channelId: number) => {
-    socketRef.current?.send(JSON.stringify({ type: "switchChannel", channelId }));
+  const handleSwitchChannel = (channelId: number, channelPassword?: string) => {
+    const password = channelPassword ?? channelPasswordCacheRef.current.get(channelId);
+    socketRef.current?.send(JSON.stringify({ type: "switchChannel", channelId, channelPassword: password }));
   };
+
+  const handleChannelPasswordSubmit = (password: string) => {
+    if (!channelPasswordPrompt) return;
+    channelPasswordCacheRef.current.set(channelPasswordPrompt.channelId, password);
+    handleSwitchChannel(channelPasswordPrompt.channelId, password);
+    setChannelPasswordPrompt(null);
+  };
+
+  const handleChannelPasswordCancel = () => setChannelPasswordPrompt(null);
 
   const handleSelectItem = (item: SelectedItem) => setSelected(item);
 
@@ -6374,8 +6518,10 @@ function AppInner() {
   return (
     <div
       className={`ts-app ts-theme-${theme}${designTheme === "nova" ? " ts-design-nova" : ""}${
-        activeCustomTheme ? " ts-design-custom" : ""
-      }${demoForceMobile ? " ts-force-mobile" : ""}${novaSplash ? " ts-nova-splash" : ""}`}
+        designTheme === "pulse" ? " ts-design-pulse" : ""
+      }${activeCustomTheme ? " ts-design-custom" : ""}${demoForceMobile ? " ts-force-mobile" : ""}${
+        novaSplash ? " ts-nova-splash" : ""
+      }`}
       data-custom-theme={activeCustomTheme?.id}
     >
       {DEMO_MODE && (
@@ -7097,6 +7243,15 @@ function AppInner() {
           urls={collectedUrls}
           onClear={() => setCollectedUrls([])}
           onClose={() => setCollectedUrlsOpen(false)}
+        />
+      )}
+
+      {channelPasswordPrompt && (
+        <ChannelPasswordDialog
+          channelName={channelPasswordPrompt.channelName}
+          wrongPassword={channelPasswordPrompt.wrongPassword}
+          onSubmit={handleChannelPasswordSubmit}
+          onCancel={handleChannelPasswordCancel}
         />
       )}
 
@@ -7823,6 +7978,9 @@ function AppInner() {
         <div className="ts-resize-handle-horizontal" onMouseDown={startUpperResize} />
 
         <div className="ts-chat-panel">
+          {connected && designTheme === "pulse" && (
+            <SpeakingNowBar clients={clients} talkers={displayTalkers} ownClientId={ownClient?.id ?? null} />
+          )}
           <div className="ts-chat-messages">
             {activeTab === "channel"
               ? chat.map((entry, i) => (

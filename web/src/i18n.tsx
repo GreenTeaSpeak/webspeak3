@@ -86,6 +86,12 @@ const translations: Record<Lang, Record<string, string>> = {
     "connect.newTab": "In neuem Tab",
     "connect.cancel": "Abbrechen",
 
+    "channelPasswordDialog.title": "Channel-Passwort erforderlich",
+    "channelPasswordDialog.prompt": "Dieser Channel ist passwortgeschützt. Bitte Passwort eingeben:",
+    "channelPasswordDialog.wrongPassword": "Falsches Passwort, bitte erneut versuchen:",
+    "channelPasswordDialog.submit": "Beitreten",
+    "channelPasswordDialog.cancel": "Abbrechen",
+
     "collectedUrls.title": "Gesammelte URLs",
     "collectedUrls.search": "Suchen:",
     "collectedUrls.url": "URL",
@@ -228,6 +234,8 @@ const translations: Record<Lang, Record<string, string>> = {
     "design.theme.standard.desc": "Das originale WebSpeak3-Design.",
     "design.theme.nova": "Nova",
     "design.theme.nova.desc": "Moderneres, dunkles Design mit abgerundeten Elementen.",
+    "design.theme.pulse": "Pulse",
+    "design.theme.pulse.desc": "Karten-Layout mit Breadcrumb-Leiste und farbigem Akzent.",
     "design.status.connected": "Verbunden",
     "design.custom.new": "+ Neues Design",
     "design.custom.import": "Design importieren",
@@ -610,6 +618,12 @@ const translations: Record<Lang, Record<string, string>> = {
     "connect.newTab": "In new tab",
     "connect.cancel": "Cancel",
 
+    "channelPasswordDialog.title": "Channel password required",
+    "channelPasswordDialog.prompt": "This channel is password-protected. Please enter the password:",
+    "channelPasswordDialog.wrongPassword": "Wrong password, please try again:",
+    "channelPasswordDialog.submit": "Join",
+    "channelPasswordDialog.cancel": "Cancel",
+
     "collectedUrls.title": "Collected URLs",
     "collectedUrls.search": "Search:",
     "collectedUrls.url": "URL",
@@ -752,6 +766,8 @@ const translations: Record<Lang, Record<string, string>> = {
     "design.theme.standard.desc": "The original WebSpeak3 design.",
     "design.theme.nova": "Nova",
     "design.theme.nova.desc": "A more modern, dark design with rounded elements.",
+    "design.theme.pulse": "Pulse",
+    "design.theme.pulse.desc": "Card-based layout with a breadcrumb bar and a color accent.",
     "design.status.connected": "Connected",
     "design.custom.new": "+ New design",
     "design.custom.import": "Import design",

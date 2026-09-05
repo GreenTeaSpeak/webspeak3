@@ -130,6 +130,7 @@ export type Ts3ConnectionEvent =
   | { type: "talkers"; clients: number[] }
   | { type: "disconnected"; reason: string }
   | { type: "error"; message: string }
+  | { type: "channelPasswordRequired"; channelId: number }
   | ({ type: "serverLog" } & ServerLogEntry)
   | {
       type: "clientConnectionInfo";
@@ -269,6 +270,7 @@ export class Ts3Connection {
           | { type: "talkers"; clients: number[] }
           | { type: "disconnected"; reason: string }
           | { type: "error"; message: string }
+          | { type: "channelPasswordRequired"; channel_id: number }
           | ({ type: "serverLog" } & ServerLogEntry)
           | {
               type: "clientConnectionInfo";
@@ -475,6 +477,8 @@ export class Ts3Connection {
             message: event.message,
             timestamp: event.timestamp,
           });
+        } else if (event.type === "channelPasswordRequired") {
+          this.emit({ type: "channelPasswordRequired", channelId: event.channel_id });
         } else {
           this.emit(event);
         }
@@ -496,8 +500,11 @@ export class Ts3Connection {
     });
   }
 
-  async switchChannel(channelId: number): Promise<void> {
-    this.child?.stdin.write(`switch ${channelId}\n`);
+  async switchChannel(channelId: number, channelPassword?: string): Promise<void> {
+    // The password travels base64-encoded on this line-based stdin protocol
+    // so it can safely contain spaces or other characters.
+    const passwordArg = channelPassword ? ` ${Buffer.from(channelPassword, "utf8").toString("base64")}` : "";
+    this.child?.stdin.write(`switch ${channelId}${passwordArg}\n`);
   }
 
   async getClientConnectionInfo(clientId: number): Promise<void> {

@@ -796,6 +796,487 @@
   border: 2px solid var(--bg);
 }
 
+/* Pulse: alternate design, independent of the light/dark toggle (always
+   dark). Visual reference: a Discord-style client with a dark rounded
+   sidebar, pill-shaped channel/client rows and a floating card-based main
+   panel - reimplemented from scratch in our own markup/CSS (no code or
+   assets borrowed), reusing the same DOM/class names as Standard/Nova the
+   way Nova does, with its own indigo/violet accent (colors need not match
+   any particular reference client). */
+
+:where(.ts-app.ts-design-pulse) {
+  --success: oklch(0.75 0.15 150);
+  --bg: oklch(0.19 0.02 290);
+  --bg-toolbar-1: oklch(0.155 0.018 290);
+  --bg-toolbar-2: oklch(0.235 0.024 290);
+  --border: oklch(0.32 0.02 290);
+  --border-soft: oklch(0.27 0.02 290);
+  --text: oklch(0.95 0.006 290);
+  --text-muted: oklch(0.64 0.014 290);
+  --text-faint: oklch(0.48 0.012 290);
+  --accent: #9d8cf0;
+  --input-bg: oklch(0.235 0.024 290);
+  --input-text: oklch(0.95 0.006 290);
+  --button-bg-1: oklch(0.235 0.024 290);
+  --button-bg-2: oklch(0.155 0.018 290);
+  --button-bg-hover-1: oklch(0.28 0.026 290);
+  --button-bg-hover-2: oklch(0.235 0.024 290);
+  --row-hover: oklch(0.27 0.03 290);
+  --client-text: oklch(0.95 0.006 290);
+  --self-text: #9d8cf0;
+  --log-bg: oklch(0.155 0.018 290);
+  --log-text: oklch(0.64 0.014 290);
+  --log-error: oklch(0.68 0.16 25);
+  color-scheme: dark;
+  font-family: "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.ts-app.ts-design-pulse button,
+.ts-app.ts-design-pulse select,
+.ts-app.ts-design-pulse input[type="text"],
+.ts-app.ts-design-pulse input[type="password"],
+.ts-app.ts-design-pulse input[type="search"],
+.ts-app.ts-design-pulse .ts-dialog {
+  border-radius: 10px;
+}
+
+/* Top bar: rendered as a breadcrumb - app logo, then the server name, then
+   (when a channel is selected) a chevron and the channel name - instead of
+   Standard's menu-item row. The menu items themselves fold into a single
+   overflow button so the breadcrumb reads clean, mirroring the reference
+   client's header. */
+
+.ts-app.ts-design-pulse > .ts-menubar {
+  order: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.65rem 1.2rem;
+  background: var(--bg-toolbar-1);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.ts-app.ts-design-pulse > .ts-menubar .ts-nova-menu-dropdown {
+  order: 1;
+}
+
+.ts-app.ts-design-pulse > .ts-menubar .ts-menubar-item {
+  border-radius: 8px;
+  color: var(--text-muted);
+}
+
+.ts-app.ts-design-pulse > .ts-menubar .ts-menubar-item-active {
+  background: var(--bg-toolbar-2);
+  color: var(--text);
+}
+
+.ts-app.ts-design-pulse > .ts-body {
+  order: 1;
+}
+
+.ts-app.ts-design-pulse > .ts-log {
+  order: 2;
+}
+
+/* Voice control bar, bottom-docked like Nova's, but pill-shaped controls on
+   a flat strip instead of Nova's rounded-square icon buttons. */
+
+.ts-app.ts-design-pulse > .ts-toolbar {
+  order: 3;
+  flex-direction: row;
+  align-items: center;
+  background: var(--bg-toolbar-1);
+  border-bottom: none;
+  border-top: 1px solid var(--border-soft);
+  padding: 0.6rem 1.2rem;
+}
+
+.ts-app.ts-design-pulse > .ts-toolbar .ts-toolbar-icons {
+  flex: 1;
+  justify-content: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.ts-app.ts-design-pulse > .ts-toolbar .ts-icon-button {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  font-size: 16px;
+}
+
+.ts-app.ts-design-pulse > .ts-toolbar .ts-toolbar-sep {
+  height: 24px;
+  align-self: center;
+  margin: 0 0.3rem;
+}
+
+.ts-app.ts-design-pulse > .ts-toolbar .ts-app-logo {
+  border-radius: 999px;
+}
+
+.ts-pulse-topbar-server {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.ts-pulse-topbar-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  background: var(--accent);
+  color: var(--bg-toolbar-1);
+  font-weight: 800;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.ts-pulse-topbar-crumb-sep {
+  color: var(--text-faint);
+  font-weight: 400;
+}
+
+.ts-pulse-topbar-channel {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.ts-app.ts-design-pulse .ts-icon-button,
+.ts-app.ts-design-pulse .ts-toolbar-fields button,
+.ts-app.ts-design-pulse .ts-chat-input-row button {
+  border-radius: 999px;
+  background: var(--button-bg-1);
+  padding: 0.35rem 0.6rem;
+}
+
+.ts-app.ts-design-pulse .ts-icon-button:hover,
+.ts-app.ts-design-pulse .ts-toolbar-fields button:hover,
+.ts-app.ts-design-pulse .ts-chat-input-row button:hover {
+  background: var(--button-bg-hover-1);
+}
+
+.ts-app.ts-design-pulse .ts-icon-caret {
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 0 999px 999px 0;
+  background: var(--button-bg-1);
+}
+
+.ts-app.ts-design-pulse .ts-toolbar-away .ts-icon-button {
+  border-radius: 999px 0 0 999px;
+}
+
+/* Floating-card layout: sidebar and chat panel read as separate rounded
+   cards with a gap between them (and against the window edges), instead of
+   Standard's flush panes or Nova's single joined pair. */
+
+.ts-app.ts-design-pulse .ts-upper {
+  gap: 0.7rem;
+  padding: 0.7rem 0.7rem 0;
+}
+
+.ts-app.ts-design-pulse .ts-tree-panel,
+.ts-app.ts-design-pulse .ts-info-panel {
+  background: var(--bg-toolbar-1);
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+}
+
+.ts-app.ts-design-pulse .ts-resize-handle-vertical,
+.ts-app.ts-design-pulse .ts-resize-handle-horizontal {
+  background: transparent;
+}
+
+.ts-app.ts-design-pulse .ts-banner-panel {
+  border-radius: 14px;
+  border: 1px solid var(--border-soft);
+  margin: 0 0.7rem;
+}
+
+.ts-app.ts-design-pulse .ts-chat-panel {
+  background: var(--bg-toolbar-1);
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+  overflow: hidden;
+  margin: 0.7rem;
+}
+
+/* Speaking Now strip: a row of avatar tiles for everyone in the player's
+   current channel, with the talking member's avatar highlighted - the
+   "who's speaking" strip from the reference client's connected view. */
+
+.ts-app.ts-design-pulse .ts-speaking-now {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  padding: 0.7rem 0.9rem;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.ts-app.ts-design-pulse .ts-speaking-now-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  width: 52px;
+}
+
+.ts-app.ts-design-pulse .ts-speaking-now-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  font-size: 14px;
+  font-weight: 800;
+  color: oklch(0.18 0.02 290);
+  box-shadow: 0 0 0 2px transparent;
+  transition: box-shadow 0.15s ease;
+}
+
+.ts-app.ts-design-pulse .ts-speaking-now-tile-active .ts-speaking-now-avatar {
+  box-shadow: 0 0 0 3px var(--success);
+}
+
+.ts-app.ts-design-pulse .ts-speaking-now-name {
+  font-size: 10px;
+  color: var(--text-muted);
+  max-width: 52px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ts-app.ts-design-pulse .ts-speaking-now-tile-active .ts-speaking-now-name {
+  color: var(--text);
+}
+
+/* Pill-shaped sidebar rows for channels/clients, accent bar on the
+   selected row instead of a full-row outline. */
+
+.ts-app.ts-design-pulse .ts-row {
+  padding: 5px 8px;
+  border-radius: 999px;
+  margin: 1px 0;
+}
+
+.ts-app.ts-design-pulse .ts-client-row {
+  padding-left: 1.2rem;
+}
+
+.ts-app.ts-design-pulse .ts-row-selected {
+  border-radius: 999px;
+  outline: none;
+  background: var(--bg-toolbar-2);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.ts-app.ts-design-pulse .ts-row:hover:not(.ts-row-selected) {
+  background: var(--row-hover);
+}
+
+/* Rounded circular avatar chips (vs. Nova's rounded squares), matching the
+   reference client's member-list look. */
+
+.ts-app.ts-design-pulse .ts-client-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  font-size: 9.5px;
+  font-weight: 800;
+  color: oklch(0.18 0.02 290);
+}
+
+.ts-app.ts-design-pulse .ts-talking .ts-client-avatar {
+  box-shadow: 0 0 0 2px var(--success);
+}
+
+/* Rounded pill tab bar for the channel/server/PM chat tabs, sitting above
+   the message list rather than flush against it. */
+
+.ts-app.ts-design-pulse .ts-chat-tabs {
+  order: -1;
+  border-top: none;
+  border-bottom: 1px solid var(--border-soft);
+  padding: 0.55rem 0.7rem 0.4rem;
+  gap: 0.35rem;
+}
+
+.ts-app.ts-design-pulse .ts-chat-tab {
+  border: none;
+  border-radius: 999px;
+  background: var(--bg-toolbar-2);
+  color: var(--text-muted);
+  padding: 0.4rem 0.85rem;
+  font-weight: 600;
+}
+
+.ts-app.ts-design-pulse .ts-chat-tab:hover:not(.ts-chat-tab-active) {
+  color: var(--text);
+}
+
+.ts-app.ts-design-pulse .ts-chat-tab-active {
+  background: var(--accent);
+  color: var(--bg-toolbar-1);
+  font-weight: 700;
+}
+
+/* Bubble-style chat messages, own messages right-aligned in an accent
+   bubble, others left-aligned in a muted-surface bubble; log lines render
+   as a centered, faint pill. */
+
+.ts-app.ts-design-pulse .ts-chat-messages {
+  padding: 0.9rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.ts-app.ts-design-pulse .ts-chat-line {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  max-width: 70%;
+  padding: 0;
+}
+
+.ts-app.ts-design-pulse .ts-chat-line-self {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.ts-app.ts-design-pulse .ts-chat-from {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.ts-app.ts-design-pulse .ts-chat-line-self .ts-chat-from {
+  color: var(--accent);
+}
+
+.ts-app.ts-design-pulse .ts-chat-bubble {
+  display: inline-block;
+  background: var(--bg-toolbar-2);
+  padding: 0.5rem 0.75rem;
+  border-radius: 14px 14px 14px 4px;
+  line-height: 1.45;
+}
+
+.ts-app.ts-design-pulse .ts-chat-line-self .ts-chat-bubble {
+  background: var(--accent);
+  color: var(--bg-toolbar-1);
+  border-radius: 14px 14px 4px 14px;
+  font-weight: 600;
+}
+
+.ts-app.ts-design-pulse .ts-chat-line-log {
+  align-self: center;
+  align-items: center;
+  max-width: none;
+  background: var(--bg-toolbar-2);
+  color: var(--text-faint);
+  font-style: italic;
+  font-size: 11.5px;
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+}
+
+.ts-app.ts-design-pulse .ts-chat-input-row {
+  border-top: 1px solid var(--border-soft);
+  padding: 0.6rem 0.8rem;
+  align-items: center;
+}
+
+.ts-app.ts-design-pulse .ts-chat-input-row textarea {
+  border-radius: 999px;
+  border-color: var(--border-soft);
+  background: var(--bg-toolbar-2);
+  padding: 0.55rem 1rem;
+}
+
+.ts-app.ts-design-pulse .ts-chat-input-row button {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent);
+  color: transparent;
+  font-size: 0;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.ts-app.ts-design-pulse .ts-chat-input-row button:hover {
+  background: var(--accent);
+  filter: brightness(1.08);
+}
+
+.ts-app.ts-design-pulse .ts-chat-input-row button:disabled {
+  opacity: 0.4;
+}
+
+.ts-app.ts-design-pulse .ts-chat-input-row button::before {
+  content: "➤";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  color: var(--bg-toolbar-1);
+}
+
+.ts-app.ts-design-pulse .ts-log {
+  border-top: 1px solid var(--border-soft);
+  margin: 0 0.7rem 0.7rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+}
+
+.ts-app.ts-design-pulse .ts-dialog {
+  border-radius: 14px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.ts-app.ts-design-pulse .ts-menu {
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.ts-app.ts-design-pulse .ts-menu-item:hover:not(:disabled) {
+  border-radius: 8px;
+}
+
+.ts-app.ts-design-pulse ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.ts-app.ts-design-pulse ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.ts-app.ts-design-pulse ::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+  border: 2px solid var(--bg);
+}
+
 /* Demo mode banner */
 
 .ts-demo-banner {
@@ -1406,6 +1887,11 @@
 
 .ts-menu-away {
   min-width: 220px;
+  /* This dropdown hangs off the bottom toolbar, so opening downward (the
+     .ts-menu default) would push it below the viewport and force the whole
+     page to scroll - open upward instead. */
+  top: auto;
+  bottom: 100%;
 }
 
 /* Chat */
@@ -2414,6 +2900,11 @@
 .ts-design-theme-swatch-nova {
   background: linear-gradient(135deg, oklch(0.245 0.016 258) 0%, oklch(0.17 0.014 258) 100%);
   box-shadow: inset 0 0 0 1px #7fb0e8;
+}
+
+.ts-design-theme-swatch-pulse {
+  background: linear-gradient(135deg, oklch(0.22 0.02 285) 0%, oklch(0.15 0.03 290) 100%);
+  box-shadow: inset 0 0 0 1px #9d8cf0;
 }
 
 .ts-design-theme-card-name {
