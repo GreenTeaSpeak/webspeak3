@@ -234,6 +234,8 @@ export const zhCN: Record<string, string> = {
   "design.theme.nova.desc": "更现代的深色设计，带圆角元素。",
   "design.theme.greenteaspeak": "GreenTeaSpeak",
   "design.theme.greenteaspeak.desc": "经典 GreenTeaSpeak 客户端布局：深色面板与金色菜单栏。",
+  "design.theme.pulse": "Pulse",
+  "design.theme.pulse.desc": "卡片式布局，带面包屑栏和彩色强调。",
   "design.status.connected": "已连接",
   "options.section.erweiterungen": "扩展",
   "options.section.hotkeys": "快捷键",

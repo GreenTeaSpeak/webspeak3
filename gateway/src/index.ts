@@ -134,7 +134,7 @@ wss.on("connection", (socket: WebSocket) => {
       case "switchChannel": {
         const channelId = Number(msg.channelId);
         if (Number.isFinite(channelId)) {
-          await connection?.switchChannel(channelId);
+          await connection?.switchChannel(channelId, msg.channelPassword);
         }
         break;
       }
