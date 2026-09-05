@@ -118,10 +118,11 @@ export type Ts3ConnectionEvent =
       serverMaxClients: number;
       serverVersion: string;
       serverLicense: string;
+      serverLicenseId: number;
       serverBannerUrl: string;
       identity: string;
     }
-  | { type: "channels"; channels: ChannelInfo[]; clients: ClientInfo[] }
+  | { type: "channels"; channels: ChannelInfo[]; clients: ClientInfo[]; ownClientId: number; serverMaxClients: number; serverClientsOnline: number; serverChannelsOnline: number }
   | { type: "chatMessage"; from: string; message: string }
   | { type: "serverMessage"; from: string; message: string }
   | { type: "privateMessage"; partnerId: number; partnerName: string; fromSelf: boolean; message: string }
@@ -155,6 +156,12 @@ export type Ts3ConnectionEvent =
       bytesReceivedTotal: number;
       bandwidthSentLastSecond: number;
       bandwidthReceivedLastSecond: number;
+      bandwidthSentLastMinute: number;
+      bandwidthReceivedLastMinute: number;
+      filetransferBandwidthSent: number;
+      filetransferBandwidthReceived: number;
+      filetransferBytesSent: number;
+      filetransferBytesReceived: number;
     }
   | { type: "serverProtocolLog"; lines: string[] }
   | { type: "banList"; entries: BanListEntry[] }
@@ -177,6 +184,8 @@ export type Ts3ConnectionEvent =
   | { type: "permList"; scope: PermScope; id1: number; id2: number | null; entries: PermissionOverviewEntry[] }
   | { type: "permissionCatalog"; entries: PermissionCatalogEntry[] };
 
+export type ServerType = "teamspeak" | "teaspeak" | "auto";
+
 export interface Ts3ConnectOptions {
   host: string;
   nickname: string;
@@ -186,6 +195,10 @@ export interface Ts3ConnectOptions {
   /** Previously-issued identity (from a prior "connected" event) to keep
    *  the same client UID across sessions. Omit to get a freshly generated one. */
   identity?: string;
+  /** Protocol / server dialect hint for the connector (`auto` when omitted). */
+  serverType?: ServerType;
+  /** One-time privilege key / token to redeem on connect. */
+  privilegeKey?: string;
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -217,6 +230,8 @@ export class Ts3Connection {
     if (this.options.channelPassword) args.push("--channel-password", this.options.channelPassword);
     if (this.options.defaultChannel) args.push("--default-channel", this.options.defaultChannel);
     if (this.options.identity) args.push("--identity", this.options.identity);
+    if (this.options.serverType) args.push("--server-type", this.options.serverType);
+    if (this.options.privilegeKey) args.push("--privilege-key", this.options.privilegeKey);
     this.child = spawn(CONNECTOR_BIN, args);
 
     createInterface({ input: this.child.stdout }).on("line", (line) => {
@@ -258,10 +273,19 @@ export class Ts3Connection {
               server_max_clients: number;
               server_version: string;
               server_license: string;
+              server_license_id?: number;
               server_banner_url: string;
               identity: string;
             }
-          | { type: "channels"; channels: RawChannelInfo[]; clients: RawClientInfo[] }
+          | {
+              type: "channels";
+              channels: RawChannelInfo[];
+              clients: RawClientInfo[];
+              own_client_id?: number;
+              server_max_clients?: number;
+              server_clients_online?: number;
+              server_channels_online?: number;
+            }
           | { type: "chatMessage"; from: string; message: string }
           | { type: "serverMessage"; from: string; message: string }
           | { type: "privateMessage"; partner_id: number; partner_name: string; from_self: boolean; message: string }
@@ -295,6 +319,12 @@ export class Ts3Connection {
               bytes_received_total: number;
               bandwidth_sent_last_second: number;
               bandwidth_received_last_second: number;
+              bandwidth_sent_last_minute?: number;
+              bandwidth_received_last_minute?: number;
+              filetransfer_bandwidth_sent?: number;
+              filetransfer_bandwidth_received?: number;
+              filetransfer_bytes_sent?: number;
+              filetransfer_bytes_received?: number;
             }
           | { type: "serverProtocolLog"; lines: string[] }
           | {
@@ -361,6 +391,7 @@ export class Ts3Connection {
             serverMaxClients: event.server_max_clients,
             serverVersion: event.server_version,
             serverLicense: event.server_license,
+            serverLicenseId: event.server_license_id ?? 0,
             serverBannerUrl: event.server_banner_url,
             identity: event.identity,
           });
@@ -394,6 +425,10 @@ export class Ts3Connection {
               serverGroups: c.server_groups,
               hasTalkPower: c.has_talk_power,
             })),
+            ownClientId: event.own_client_id ?? 0,
+            serverMaxClients: event.server_max_clients ?? 0,
+            serverClientsOnline: event.server_clients_online ?? event.clients.length,
+            serverChannelsOnline: event.server_channels_online ?? event.channels.length,
           });
         } else if (event.type === "privateMessage") {
           this.emit({
@@ -428,6 +463,12 @@ export class Ts3Connection {
             bytesReceivedTotal: event.bytes_received_total,
             bandwidthSentLastSecond: event.bandwidth_sent_last_second,
             bandwidthReceivedLastSecond: event.bandwidth_received_last_second,
+            bandwidthSentLastMinute: event.bandwidth_sent_last_minute ?? 0,
+            bandwidthReceivedLastMinute: event.bandwidth_received_last_minute ?? 0,
+            filetransferBandwidthSent: event.filetransfer_bandwidth_sent ?? 0,
+            filetransferBandwidthReceived: event.filetransfer_bandwidth_received ?? 0,
+            filetransferBytesSent: event.filetransfer_bytes_sent ?? 0,
+            filetransferBytesReceived: event.filetransfer_bytes_received ?? 0,
           });
         } else if (event.type === "banList") {
           this.emit({
@@ -501,10 +542,12 @@ export class Ts3Connection {
   }
 
   async switchChannel(channelId: number, channelPassword?: string): Promise<void> {
+    const id = Number(channelId);
+    if (!Number.isFinite(id)) return;
     // The password travels base64-encoded on this line-based stdin protocol
     // so it can safely contain spaces or other characters.
     const passwordArg = channelPassword ? ` ${Buffer.from(channelPassword, "utf8").toString("base64")}` : "";
-    this.child?.stdin.write(`switch ${channelId}${passwordArg}\n`);
+    this.child?.stdin.write(`switch ${id}${passwordArg}\n`);
   }
 
   async getClientConnectionInfo(clientId: number): Promise<void> {
@@ -753,9 +796,25 @@ export class Ts3Connection {
 
   async disconnect(message = ""): Promise<void> {
     if (this.child && !this.child.killed) {
+      const child = this.child;
       const sanitized = message.replace(/[\r\n]+/g, " ").trim();
-      this.child.stdin.write(`disconnect ${sanitized}\n`);
-      this.child.stdin.end();
+      child.stdin.write(`disconnect ${sanitized}\n`);
+      child.stdin.end();
+      // Wait for the connector process to actually exit before returning, so a
+      // caller that immediately reconnects (index.ts's "connect" handler) never
+      // spawns a replacement while this one is still shutting down - two
+      // connector processes would otherwise briefly hold the same audio/socket
+      // resources. Fall back to a hard kill if it doesn't exit on its own.
+      await new Promise<void>((resolve) => {
+        const timeout = setTimeout(() => {
+          child.kill();
+          resolve();
+        }, 3000);
+        child.once("exit", () => {
+          clearTimeout(timeout);
+          resolve();
+        });
+      });
     }
     this.listeners.clear();
   }
