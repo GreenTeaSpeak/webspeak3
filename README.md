@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <b>A modern, self-hosted browser client for TeamSpeak 3 servers — no install, just open a tab.</b>
+  <b>A modern, self-hosted browser client for TeamSpeak, TeaSpeak, and GreenTeaSpeak servers — no install, just open a tab.</b>
 </p>
 
 <p align="center">
@@ -52,9 +52,9 @@ Run the ready-made container and open **http://localhost:8080**:
 docker run -d --name webspeak3 --restart unless-stopped -p 8080:8080 moepchi/webspeak3:latest
 ```
 
-Enter the address and port of **any reachable TeamSpeak 3 or TeamSpeak 6
-server** in the connection dialog. The TeamSpeak server does not need to be
-installed on the same machine, modified, or operated by you.
+Enter the address and port of **any reachable TeamSpeak 3, TeamSpeak 6,
+TeaSpeak, or GreenTeaSpeak server** in the connection dialog. The server does
+not need to be installed on the same machine, modified, or operated by you.
 
 > Voice requires a secure context. Microphone access works on `localhost`; for
 > access from other devices, place WebSpeak3 behind an HTTPS reverse proxy.
@@ -63,7 +63,7 @@ installed on the same machine, modified, or operated by you.
 
 |  |  |
 |---|---|
-| 🔌 **Real TeamSpeak protocol** | Connects to actual TS3/TS6 servers over a WebSocket gateway — the server stays exactly as-is |
+| 🔌 **Real TeamSpeak protocol** | Connects to actual TS3/TS6, TeaSpeak, and GreenTeaSpeak servers over a WebSocket gateway — the server stays exactly as-is |
 | 🎙️ **Low-latency voice** | Opus-encoded voice with voice activation ("Sprachaktivierung") and adjustable sensitivity |
 | 🤫 **Whisper** | Target your voice at specific channels or clients instead of your whole current channel |
 | 🔊 **Custom audio output picker** | Route playback to any output device — works even in browsers without `AudioContext.setSinkId` |
@@ -78,8 +78,9 @@ installed on the same machine, modified, or operated by you.
 | 📱 **Mobile-friendly layout** | Responsive single-column layout for narrow screens, not just a shrunk desktop UI |
 | 🌍 **Localized UI** | Interface available in German, English, and Simplified Chinese, detected automatically or switchable in Options |
 | 🌗 **Dark / light theme** | Clean, modern UI that adapts to your preference |
-| 🔁 **Multi-join (server tabs)** | Several TeamSpeak connections in parallel — one tab per server, like GreenTeaSpeak 2. Audio stays on the active tab |
+| 🔁 **Multi-join (server tabs)** | Several connections in parallel — one tab per server, like GreenTeaSpeak 2. Audio stays on the active tab |
 | 🔁 **Seamless reconnect** | Switch or add connections mid-session without tearing down unrelated tabs |
+| 🍵 **GreenTeaSpeak theme** | Optional GTS-styled UI chrome (dark panels, gold menu bar, connection-tab strip) alongside the default look |
 
 ## 🧱 Tech Stack
 
@@ -103,19 +104,22 @@ gateway is required that speaks the real TS protocol on one side and
 WebSocket to the browser on the other.
 
 ```
-Browser (web/)  <--WebSocket-->  Gateway (gateway/)  <--stdin/stdout JSON-->  Rust connector (connector/)  <--TS3/TS6 protocol-->  TeamSpeak Server
+Browser (web/)  <--WebSocket-->  Gateway (gateway/)  <--stdin/stdout JSON-->  Rust connector (connector/)  <--TS3/TS6/TeaSpeak protocol-->  Server
 ```
 
 - **`web/`** — Vite + React frontend. TS3-lookalike UI: channel tree, chat
-  tabs, voice controls.
+  tabs, voice controls. Optional GreenTeaSpeak-styled chrome for the
+  connection-tab strip and menu bar.
 - **`gateway/`** — Node.js/TypeScript WebSocket server. Spawns the Rust
   connector **per browser WebSocket** and relays newline-delimited JSON events
   between it and the browser. Multi-join opens one `/ws` connection per server
   tab (parallel connectors).
 - **`connector/`** — Rust binary wrapping [`tsclientlib`](https://github.com/ReSpeak/tsclientlib)
-  (vendored as a git submodule in `tsclientlib/`), the actual TS3/TS6
+  (vendored as a git submodule in `tsclientlib/`, currently tracking a fork
+  with TeaSpeak/GreenTeaSpeak protocol support), the actual TS3/TS6/TeaSpeak
   protocol implementation. Handles connecting, channel/client state, chat,
-  and Opus-encoded voice.
+  and Opus-encoded voice. Auto-detects the server dialect on connect (or it
+  can be forced via `--server-type`).
 
 </details>
 
@@ -265,6 +269,9 @@ The vast majority of this project's code was written by [Claude Code](https://cl
 any way officially connected with TeamSpeak Systems GmbH.
 
 "TeamSpeak", "TS3", and related logos or names are registered trademarks of
-TeamSpeak Systems GmbH. All product and company names are trademarks™ or
-registered® trademarks of their respective holders. Use of them does not
-imply any affiliation with or endorsement by them.
+TeamSpeak Systems GmbH. Likewise, WebSpeak3 is not affiliated with,
+associated with, authorized by, or endorsed by TeaSpeak or GreenTeaSpeak;
+"TeaSpeak" and "GreenTeaSpeak" are names of their respective projects/
+operators. All product and company names are trademarks™ or registered®
+trademarks of their respective holders. Use of them does not imply any
+affiliation with or endorsement by them.
