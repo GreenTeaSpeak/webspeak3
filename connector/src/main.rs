@@ -569,9 +569,8 @@ fn snapshot(con: &data::Connection) -> Event {
 		})
 		.collect::<Vec<_>>();
 	// Bookkeeping includes ServerQuery clients (`ClientType::Query`); hide them
-	// from the channel tree / client lists. Online counters still use the
-	// server-reported total (often includes Query) via `client_count` below.
-	let all_clients_count = con.clients.len() as u16;
+	// from the channel tree / client lists, and from the online-count fallback
+	// below too, so the number shown never counts a client the list doesn't.
 	let clients = con
 		.clients
 		.values()
@@ -606,12 +605,13 @@ fn snapshot(con: &data::Connection) -> Event {
 		.collect::<Vec<_>>();
 
 	// Prefer server-reported counters (GTS/TS `virtualserver_*` via notifyserverupdated)
-	// but never under-report vs. the full bookkeeping client set including Query
-	// (stale optional_data after joins would otherwise freeze the InfoPanel left number).
+	// but never under-report vs. the visible (non-Query) client set (stale
+	// optional_data after joins would otherwise freeze the InfoPanel left number).
 	let opt = con.server.optional_data.as_ref();
 	let visible_channels = channels.len() as u64;
+	let visible_clients_count = clients.len() as u16;
 	let server_clients_online =
-		opt.map(|d| d.client_count.max(all_clients_count)).unwrap_or(all_clients_count);
+		opt.map(|d| d.client_count.max(visible_clients_count)).unwrap_or(visible_clients_count);
 	let server_channels_online =
 		opt.map(|d| d.channel_count.max(visible_channels)).unwrap_or(visible_channels);
 
@@ -2120,10 +2120,15 @@ async fn run(args: Args) -> Result<()> {
 						}
 					}
 					if pending_server_conninfo {
-						if let Some(data) = &con.get_state()?.server.connection_data {
-							// TeaSpeak/TS may report packet loss as a fraction (0–1) or percent.
+						let state = con.get_state()?;
+						// GreenTeaSpeak reports packet loss already as a percent; classic
+						// TeamSpeak3/TeaSpeak report it as a fraction (0-1). A value's magnitude
+						// alone can't disambiguate a healthy GTS server (e.g. 0.5%) from a bad
+						// TS3 one (e.g. 0.5 = 50%), so branch on the actual server type instead.
+						let is_gts = is_greenteaspeak_server_version(&state.server.version);
+						if let Some(data) = &state.server.connection_data {
 							let loss = data.packetloss_total;
-							let packet_loss_percent = if loss <= 1.0 { loss * 100.0 } else { loss };
+							let packet_loss_percent = if is_gts { loss } else { loss * 100.0 };
 							emit(&Event::ServerConnectionInfo {
 								ping_ms: data.ping.as_seconds_f64() * 1000.0,
 								connected_secs: data.connected_time_total.whole_seconds(),
