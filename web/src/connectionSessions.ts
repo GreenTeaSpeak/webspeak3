@@ -90,6 +90,8 @@ export type ParkedSessionState = {
   log: LogEntry[];
   hasConnected: boolean;
   previousClients: ClientInfo[] | null;
+  /** Whether the mic was on for this tab when it was parked, so switching back restores it. */
+  micWasOn: boolean;
 };
 
 export type SessionTabInfo = {
@@ -140,6 +142,7 @@ export function emptyParkedState(partial?: Partial<ParkedSessionState>): ParkedS
     log: [],
     hasConnected: false,
     previousClients: null,
+    micWasOn: false,
     ...partial,
   };
 }

@@ -660,8 +660,10 @@ function ServerIcon() {
   );
 }
 
-/** Survives ChannelTree remounts when Select's setState rebuilds the tree. */
-let lastChannelClick: { id: number; at: number } | null = null;
+/** Survives ChannelTree remounts when Select's setState rebuilds the tree.
+ *  Keyed per session (multi-join tab) so a click in one tab's tree can never
+ *  be paired with a click in another tab's tree as a false double-click. */
+const lastChannelClickBySession = new Map<string, { id: number; at: number }>();
 let switchArmedUntil = 0;
 
 function ChannelTree({
@@ -673,6 +675,7 @@ function ChannelTree({
   serverGroups,
   groupIconImages,
   selected,
+  sessionKey,
   onSelectItem,
   onSwitchChannel,
   onOpenPrivateChat,
@@ -688,6 +691,9 @@ function ChannelTree({
   serverGroups: GroupEntry[] | null;
   groupIconImages: Record<string, string>;
   selected: SelectedItem | null;
+  /** Identifies which multi-join tab this tree belongs to, so the manual
+   *  double-click detection below can't pair clicks across two tabs. */
+  sessionKey: string;
   onSelectItem: (item: SelectedItem) => void;
   onSwitchChannel: (channelId: number) => void;
   onOpenPrivateChat: (clientId: number, clientName: string) => void;
@@ -745,13 +751,13 @@ function ChannelTree({
               // click's Select setState remounts this row before the second click.
               // Spacers are joinable (TS/GTS): visual-only difference.
               const now = performance.now();
-              const prev = lastChannelClick;
+              const prev = lastChannelClickBySession.get(sessionKey) ?? null;
               if (prev && prev.id === channel.id && now - prev.at < 450) {
-                lastChannelClick = null;
+                lastChannelClickBySession.delete(sessionKey);
                 switchArmedUntil = now + 50;
                 onSwitchChannel(channel.id);
               } else {
-                lastChannelClick = { id: channel.id, at: now };
+                lastChannelClickBySession.set(sessionKey, { id: channel.id, at: now });
               }
             }}
             onDoubleClick={() => {
@@ -893,6 +899,7 @@ function ChannelTree({
               serverGroups={serverGroups}
               groupIconImages={groupIconImages}
               selected={selected}
+              sessionKey={sessionKey}
               onSelectItem={onSelectItem}
               onSwitchChannel={onSwitchChannel}
               onOpenPrivateChat={onOpenPrivateChat}
@@ -5301,7 +5308,7 @@ function AppInner() {
     };
   }, []);
 
-  const appendLog = (entry: LogEntry) => setLog((prev) => [...prev, entry]);
+  const appendLog = (entry: LogEntry) => setLog((prev) => [...prev.slice(-(MAX_LOG_ENTRIES - 1)), entry]);
 
   const startTreeResize = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -5384,6 +5391,7 @@ function AppInner() {
       log,
       hasConnected: hasConnectedRef.current,
       previousClients: previousClientsRef.current,
+      micWasOn: micOn,
     });
 
   const applyParkedToUi = (parked: ParkedSessionState) => {
@@ -5417,6 +5425,14 @@ function AppInner() {
     setLog(parked.log);
     hasConnectedRef.current = parked.hasConnected;
     previousClientsRef.current = parked.previousClients;
+    // Sync the "previous" whisper-target baseline to the tab we're restoring,
+    // so the whisper-target effect (keyed on whisperChannelIds/whisperClientIds)
+    // sees no change on this switch and doesn't replay a spurious started/stopped
+    // log entry or resend setWhisperTargets for a target that didn't change.
+    prevWhisperTargetsRef.current = {
+      channels: new Set(parked.whisperChannelIds),
+      clients: new Set(parked.whisperClientIds),
+    };
     cleanDisconnectRef.current = false;
   };
 
@@ -5452,6 +5468,22 @@ function AppInner() {
     hasConnectedRef.current = false;
     previousClientsRef.current = null;
     cleanDisconnectRef.current = false;
+  };
+
+  // serverGroups/channelGroups/permissionCatalog/banList/fileBrowser* are
+  // per-server data cached at the page level rather than per-tab (they're not
+  // part of ParkedSessionState). Without invalidating them on a multi-join tab
+  // switch, the existing "if (!serverGroups) fetch" guards would keep serving
+  // the previous session's server the newly active tab belongs to.
+  const resetPerServerCaches = () => {
+    setServerGroups(null);
+    setChannelGroups(null);
+    setPermissionCatalog(null);
+    permissionCatalogRequestedRef.current = false;
+    setBanList(null);
+    setFileBrowserTarget(null);
+    setFileBrowserPath("/");
+    setFileBrowserEntries(null);
   };
 
   const updateTabMeta = (id: string, patch: Partial<SessionTabInfo>) => {
@@ -5491,6 +5523,7 @@ function AppInner() {
     const parked = target.parked ?? emptyParkedState({ host: target.id });
     target.parked = null;
     applyParkedToUi(parked);
+    resetPerServerCaches();
     socketRef.current = target.socket as WebSocket | DemoSocket | null;
     activeSessionIdRef.current = id;
     setActiveSessionId(id);
@@ -5499,6 +5532,10 @@ function AppInner() {
       connected: parked.connected,
       connecting: parked.connecting,
     });
+    // parkActiveSession() above stopped the mic when leaving the previous tab -
+    // restore it here if it was on for the tab we're switching back to, so
+    // re-entering a tab doesn't silently leave the user unable to transmit.
+    if (parked.micWasOn) void startMic();
   };
 
   const removeSession = (id: string, opts?: { skipSocketClose?: boolean }) => {
@@ -5523,6 +5560,7 @@ function AppInner() {
       }
     }
     sessionsRef.current.delete(id);
+    lastChannelClickBySession.delete(id);
     setSessionTabs((prev) => prev.filter((t) => t.id !== id));
 
     if (activeSessionIdRef.current !== id) {
@@ -5537,9 +5575,11 @@ function AppInner() {
       const parked = nextRec.parked ?? emptyParkedState();
       nextRec.parked = null;
       applyParkedToUi(parked);
+      resetPerServerCaches();
       socketRef.current = nextRec.socket as WebSocket | DemoSocket | null;
       activeSessionIdRef.current = nextId;
       setActiveSessionId(nextId);
+      if (parked.micWasOn) void startMic();
     } else {
       clearActiveUi();
       socketRef.current = null;
@@ -6241,6 +6281,16 @@ function AppInner() {
 
   useEffect(() => {
     if (!connected) return;
+    const prev = prevWhisperTargetsRef.current;
+    const setsEqual = (a: Set<number>, b: Set<number>) => a.size === b.size && [...a].every((x) => b.has(x));
+    const unchanged =
+      !!prev && setsEqual(prev.channels, whisperChannelIds) && setsEqual(prev.clients, whisperClientIds);
+    prevWhisperTargetsRef.current = { channels: new Set(whisperChannelIds), clients: new Set(whisperClientIds) };
+    // Nothing actually changed for the now-active session (e.g. this run was
+    // triggered by restoring a parked multi-join tab, not by the user toggling
+    // a whisper target) - skip both the gateway resend and the log entry below.
+    if (unchanged) return;
+
     socketRef.current?.send(
       JSON.stringify({
         type: "setWhisperTargets",
@@ -6249,8 +6299,6 @@ function AppInner() {
       })
     );
 
-    const prev = prevWhisperTargetsRef.current;
-    prevWhisperTargetsRef.current = { channels: new Set(whisperChannelIds), clients: new Set(whisperClientIds) };
     const wasEmpty = !prev || (prev.channels.size === 0 && prev.clients.size === 0);
     const isEmpty = whisperChannelIds.size === 0 && whisperClientIds.size === 0;
     if (wasEmpty && isEmpty) return;
@@ -8685,6 +8733,7 @@ function AppInner() {
                   serverGroups={serverGroups}
                   groupIconImages={serverIconImages}
                   selected={selected}
+                  sessionKey={activeSessionId ?? ""}
                   onSelectItem={handleSelectItem}
                   onSwitchChannel={handleSwitchChannel}
                   onOpenPrivateChat={handleOpenPrivateChat}
@@ -8839,7 +8888,7 @@ function AppInner() {
       </div>
 
       <div className="ts-log">
-        {log.slice(-1).map((entry, i) => {
+        {log.slice(-50).map((entry, i) => {
           let text = entry.text;
           if (/os[- ]?error\s*10049/i.test(text) || /angeforderte Adresse ist in diesem Kontext ungültig/i.test(text)) {
             text = "File-Transfer fehlgeschlagen (ungültige Adresse)";

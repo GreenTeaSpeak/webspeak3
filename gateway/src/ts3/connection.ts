@@ -796,9 +796,25 @@ export class Ts3Connection {
 
   async disconnect(message = ""): Promise<void> {
     if (this.child && !this.child.killed) {
+      const child = this.child;
       const sanitized = message.replace(/[\r\n]+/g, " ").trim();
-      this.child.stdin.write(`disconnect ${sanitized}\n`);
-      this.child.stdin.end();
+      child.stdin.write(`disconnect ${sanitized}\n`);
+      child.stdin.end();
+      // Wait for the connector process to actually exit before returning, so a
+      // caller that immediately reconnects (index.ts's "connect" handler) never
+      // spawns a replacement while this one is still shutting down - two
+      // connector processes would otherwise briefly hold the same audio/socket
+      // resources. Fall back to a hard kill if it doesn't exit on its own.
+      await new Promise<void>((resolve) => {
+        const timeout = setTimeout(() => {
+          child.kill();
+          resolve();
+        }, 3000);
+        child.once("exit", () => {
+          clearTimeout(timeout);
+          resolve();
+        });
+      });
     }
     this.listeners.clear();
   }
