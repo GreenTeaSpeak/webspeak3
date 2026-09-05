@@ -612,11 +612,18 @@ fn snapshot(con: &data::Connection) -> Event {
 	// Prefer server-reported counters (GTS/TS `virtualserver_*` via notifyserverupdated)
 	// but never under-report vs. the visible (non-Query) client set (stale
 	// optional_data after joins would otherwise freeze the InfoPanel left number).
+	// `virtualserver_clientsonline` usually includes ServerQuery; subtract the
+	// Query clients we filtered from the list so the headline matches the tree.
 	let opt = con.server.optional_data.as_ref();
 	let visible_channels = channels.len() as u64;
 	let visible_clients_count = clients.len() as u16;
-	let server_clients_online =
-		opt.map(|d| d.client_count.max(visible_clients_count)).unwrap_or(visible_clients_count);
+	let query_count = (con.clients.len() as u16).saturating_sub(visible_clients_count);
+	let server_clients_online = opt
+		.map(|d| {
+			let without_query = d.client_count.saturating_sub(query_count);
+			without_query.max(visible_clients_count)
+		})
+		.unwrap_or(visible_clients_count);
 	let server_channels_online =
 		opt.map(|d| d.channel_count.max(visible_channels)).unwrap_or(visible_channels);
 
