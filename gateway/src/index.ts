@@ -138,6 +138,14 @@ wss.on("connection", (socket: WebSocket) => {
         }
         break;
       }
+      case "moveClient": {
+        const clientId = Number(msg.clientId);
+        const channelId = Number(msg.channelId);
+        if (Number.isFinite(clientId) && Number.isFinite(channelId)) {
+          await connection?.moveClient(clientId, channelId, msg.channelPassword);
+        }
+        break;
+      }
       case "sendChatMessage": {
         await connection?.sendChatMessage(msg.message);
         break;

@@ -486,6 +486,7 @@ export const zhCN: Record<string, string> = {
 
   "clientContext.privateChat": "私聊",
   "clientContext.poke": "戳一戳",
+  "clientContext.moveTo": "移动到…",
   "clientContext.copyName": "复制名称",
   "clientContext.connectionInfo": "查看连接信息",
   "clientContext.addWhisperTarget": "添加为悄悄话目标",
@@ -496,6 +497,11 @@ export const zhCN: Record<string, string> = {
   "clientContext.kick": "踢出服务器",
   "clientContext.ban": "封禁",
   "clientContext.notSupported": "网页客户端暂不支持此功能",
+
+  "moveClient.title": "移动",
+  "moveClient.empty": "没有可用频道。",
+  "moveClient.current": "当前频道",
+  "moveClient.spacer": "间隔频道",
 
   "serverContext.connectionInfo": "服务器连接信息",
   "serverContext.copyAddress": "复制服务器地址",
