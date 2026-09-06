@@ -80,7 +80,7 @@ not need to be installed on the same machine, modified, or operated by you.
 | 🌗 **Dark / light theme** | Clean, modern UI that adapts to your preference |
 | 🔁 **Multi-join (server tabs)** | Several connections in parallel — one tab per server, like GreenTeaSpeak 2. Audio stays on the active tab |
 | 🔁 **Seamless reconnect** | Switch or add connections mid-session without tearing down unrelated tabs |
-| 🍵 **GreenTeaSpeak theme** | Optional GTS-styled UI chrome (dark panels, gold menu bar, connection-tab strip) alongside the default look |
+| 🍵 **GreenTeaSpeak support** | Connects to real GreenTeaSpeak servers (not just TS3/TS6/TeaSpeak), plus an optional GTS-styled UI chrome (dark panels, gold menu bar, connection-tab strip) alongside the default look |
 
 ## 🧱 Tech Stack
 
@@ -104,7 +104,7 @@ gateway is required that speaks the real TS protocol on one side and
 WebSocket to the browser on the other.
 
 ```
-Browser (web/)  <--WebSocket-->  Gateway (gateway/)  <--stdin/stdout JSON-->  Rust connector (connector/)  <--TS3/TS6/TeaSpeak protocol-->  Server
+Browser (web/)  <--WebSocket-->  Gateway (gateway/)  <--stdin/stdout JSON-->  Rust connector (connector/)  <--TS3/TS6/TeaSpeak/GreenTeaSpeak protocol-->  Server
 ```
 
 - **`web/`** — Vite + React frontend. TS3-lookalike UI: channel tree, chat
