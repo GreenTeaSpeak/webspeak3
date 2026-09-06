@@ -652,6 +652,13 @@
   padding-right: 0;
 }
 
+.ts-app.ts-design-greenteaspeak .ts-channel-row.ts-drop-target,
+.ts-app.ts-design-greenteaspeak .ts-channel-row.ts-spacer.ts-drop-target {
+  background: color-mix(in srgb, var(--accent, #4caf50) 28%, transparent);
+  outline: 1px dashed var(--accent, #4caf50);
+  outline-offset: -1px;
+}
+
 .ts-app.ts-design-greenteaspeak .ts-channel-row.ts-spacer .ts-spacer-label {
   left: 4px;
   right: 4px;

@@ -277,6 +277,20 @@ export class DemoSocket {
         );
         break;
       }
+      case "moveClient": {
+        const clientId = Number(msg.clientId);
+        const channelId = Number(msg.channelId);
+        if (Number.isFinite(clientId) && Number.isFinite(channelId)) {
+          if (clientId === SELF_ID) {
+            this.selfChannel = channelId;
+          } else {
+            const npc = DEMO_NPCS.find((c) => c.id === clientId);
+            if (npc) npc.channel = channelId;
+          }
+          this.after(120, () => this.sendChannels(this.lastNickname));
+        }
+        break;
+      }
       case "getClientConnectionInfo": {
         this.after(400, () =>
           this.emit({

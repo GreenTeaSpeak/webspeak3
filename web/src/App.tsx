@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 
 /** Only dismiss on a genuine backdrop click, not a text-selection drag that
@@ -260,12 +260,33 @@ interface Favorite {
   serverPassword: string;
   defaultChannel: string;
   defaultChannelPassword: string;
+  /** When true, ServerQuery clients appear in the channel tree. Default: false. */
+  showServerQueryClients: boolean;
+}
+
+function normalizeFavorite(raw: Partial<Favorite> & Pick<Favorite, "id">): Favorite {
+  return {
+    id: raw.id,
+    bookmarkName: typeof raw.bookmarkName === "string" ? raw.bookmarkName : "",
+    nickname: typeof raw.nickname === "string" ? raw.nickname : "",
+    host: typeof raw.host === "string" ? raw.host : "",
+    serverPassword: typeof raw.serverPassword === "string" ? raw.serverPassword : "",
+    defaultChannel: typeof raw.defaultChannel === "string" ? raw.defaultChannel : "",
+    defaultChannelPassword:
+      typeof raw.defaultChannelPassword === "string" ? raw.defaultChannelPassword : "",
+    showServerQueryClients: raw.showServerQueryClients === true,
+  };
 }
 
 function loadFavorites(): Favorite[] {
   try {
     const raw = localStorage.getItem(FAVORITES_KEY);
-    return raw ? (JSON.parse(raw) as Favorite[]) : [];
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((v): v is Partial<Favorite> & Pick<Favorite, "id"> => v && typeof v.id === "string")
+      .map(normalizeFavorite);
   } catch {
     return [];
   }
@@ -448,6 +469,8 @@ interface ClientInfo {
   channelGroup: number;
   serverGroups: number[];
   hasTalkPower: boolean;
+  /** ServerQuery client; filtered from the tree unless a favorite enables them. */
+  isQuery?: boolean;
 }
 
 interface GroupEntry {
@@ -666,6 +689,27 @@ function ServerIcon() {
 const lastChannelClickBySession = new Map<string, { id: number; at: number }>();
 let switchArmedUntil = 0;
 
+const CLIENT_DRAG_MIME = "application/x-webspeak3-client";
+
+type ClientDragPayload = { clientId: number; channelId: number };
+
+function parseClientDragPayload(raw: string): ClientDragPayload | null {
+  try {
+    const data = JSON.parse(raw) as Partial<ClientDragPayload>;
+    if (
+      typeof data.clientId === "number" &&
+      Number.isFinite(data.clientId) &&
+      typeof data.channelId === "number" &&
+      Number.isFinite(data.channelId)
+    ) {
+      return { clientId: data.clientId, channelId: data.channelId };
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
 function ChannelTree({
   channels,
   clients,
@@ -680,6 +724,7 @@ function ChannelTree({
   onSwitchChannel,
   onOpenPrivateChat,
   onPokeClient,
+  onMoveClient,
   onClientContextMenu,
   onChannelContextMenu,
 }: {
@@ -698,11 +743,13 @@ function ChannelTree({
   onSwitchChannel: (channelId: number) => void;
   onOpenPrivateChat: (clientId: number, clientName: string) => void;
   onPokeClient: (clientId: number, clientName: string) => void;
+  onMoveClient: (clientId: number, channelId: number) => void;
   onClientContextMenu: (e: React.MouseEvent, clientId: number, clientName: string, isSelf: boolean) => void;
   onChannelContextMenu: (e: React.MouseEvent, channelId: number, channelName: string) => void;
 }) {
   const t = useT();
   const [collapsed, setCollapsed] = useState<Set<number>>(() => new Set());
+  const [dragOverChannelId, setDragOverChannelId] = useState<number | null>(null);
   // Module-level click tracking (see lastChannelClick) — refs alone are not
   // enough when Select re-renders remount nested ChannelTree instances.
   const children = channels.filter((c) => c.parent === parent).sort((a, b) => a.order - b.order);
@@ -744,7 +791,7 @@ function ChannelTree({
           <div
             className={`ts-row ts-channel-row${spacerClass}${
               selected?.type === "channel" && selected.id === channel.id ? " ts-row-selected" : ""
-            }`}
+            }${dragOverChannelId === channel.id ? " ts-drop-target" : ""}`}
             onClick={() => {
               onSelectItem({ type: "channel", id: channel.id });
               // Manual double-click: native dblclick is often lost when the first
@@ -765,6 +812,24 @@ function ChannelTree({
               onSwitchChannel(channel.id);
             }}
             onContextMenu={(e) => onChannelContextMenu(e, channel.id, channel.name)}
+            onDragOver={(e) => {
+              if (![...e.dataTransfer.types].includes(CLIENT_DRAG_MIME)) return;
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "move";
+              if (dragOverChannelId !== channel.id) setDragOverChannelId(channel.id);
+            }}
+            onDragLeave={(e) => {
+              const related = e.relatedTarget as Node | null;
+              if (related && e.currentTarget.contains(related)) return;
+              setDragOverChannelId((prev) => (prev === channel.id ? null : prev));
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragOverChannelId(null);
+              const payload = parseClientDragPayload(e.dataTransfer.getData(CLIENT_DRAG_MIME));
+              if (!payload || payload.channelId === channel.id) return;
+              onMoveClient(payload.clientId, channel.id);
+            }}
             title={t("tree.clickToJoin")}
           >
             {!spacer.isSpacer && (
@@ -816,6 +881,18 @@ function ChannelTree({
                         ? " ts-talking"
                         : ""
                     }${selected?.type === "client" && selected.id === c.id ? " ts-row-selected" : ""}`}
+                    draggable
+                    onDragStart={(e) => {
+                      const payload: ClientDragPayload = {
+                        clientId: c.id,
+                        channelId: c.channel,
+                      };
+                      const raw = JSON.stringify(payload);
+                      e.dataTransfer.setData(CLIENT_DRAG_MIME, raw);
+                      e.dataTransfer.setData("text/plain", raw);
+                      e.dataTransfer.effectAllowed = "move";
+                    }}
+                    onDragEnd={() => setDragOverChannelId(null)}
                     onClick={() => onSelectItem({ type: "client", id: c.id })}
                     onDoubleClick={
                       c.id === ownClientId ? undefined : () => onOpenPrivateChat(c.id, c.name)
@@ -904,6 +981,7 @@ function ChannelTree({
               onSwitchChannel={onSwitchChannel}
               onOpenPrivateChat={onOpenPrivateChat}
               onPokeClient={onPokeClient}
+              onMoveClient={onMoveClient}
               onClientContextMenu={onClientContextMenu}
               onChannelContextMenu={onChannelContextMenu}
             />
@@ -1470,6 +1548,7 @@ function FavoritesDialog({
           id: crypto.randomUUID(),
           bookmarkName: prefillNew.host || t("favorites.newFavoriteName"),
           ...prefillNew,
+          showServerQueryClients: prefillNew.showServerQueryClients === true,
         }
       : null
   );
@@ -1496,6 +1575,7 @@ function FavoritesDialog({
       serverPassword: "",
       defaultChannel: "",
       defaultChannelPassword: "",
+      showServerQueryClients: false,
     };
     setDraft((prev) => [...prev, nf]);
     setSelectedId(nf.id);
@@ -1624,7 +1704,12 @@ function FavoritesDialog({
               </select>
             </label>
             <label className="ts-dialog-checkbox">
-              <input type="checkbox" disabled defaultChecked title="Not supported yet" />
+              <input
+                type="checkbox"
+                disabled={!selected}
+                checked={selected?.showServerQueryClients ?? false}
+                onChange={(e) => updateSelected({ showServerQueryClients: e.target.checked })}
+              />
               {t("favorites.showServerQueryClients")}
             </label>
             <label className="ts-dialog-checkbox">
@@ -2250,6 +2335,80 @@ function GroupAssignDialog({
                       <span className="ts-menu-item-label">{g.name}</span>
                       {kind === "server" && assigned && (
                         <span className="ts-group-assign-hint">{t("groupAssign.clickToRemove")}</span>
+                      )}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+        <div className="ts-dialog-buttons">
+          <div />
+          <div className="ts-dialog-buttons-right">
+            <button onClick={onClose}>{t("dialog.close")}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MoveClientDialog({
+  clientName,
+  currentChannelId,
+  channels,
+  onSelect,
+  onClose,
+}: {
+  clientName: string;
+  currentChannelId: number;
+  channels: ChannelInfo[];
+  onSelect: (channelId: number) => void;
+  onClose: () => void;
+}) {
+  const t = useT();
+  const backdrop = useBackdropDismiss(onClose);
+  const movable = [...channels].sort((a, b) => a.order - b.order);
+
+  return (
+    <div className="ts-dialog-backdrop" {...backdrop}>
+      <div className="ts-dialog ts-group-assign-dialog" onClick={(e) => e.stopPropagation()}>
+        <div className="ts-dialog-titlebar">
+          <span>
+            {t("moveClient.title")} - {clientName}
+          </span>
+          <button onClick={onClose} title={t("dialog.close")}>
+            ✕
+          </button>
+        </div>
+        <div className="ts-dialog-body">
+          {movable.length === 0 ? (
+            <div className="ts-connection-info-loading">{t("moveClient.empty")}</div>
+          ) : (
+            <ul className="ts-group-assign-list">
+              {movable.map((ch) => {
+                const current = ch.id === currentChannelId;
+                const spacer = spacerDisplayName(ch.name, ch.parent === 0);
+                const label = spacer.isSpacer
+                  ? spacer.label.trim() || ch.name
+                  : ch.name;
+                return (
+                  <li key={ch.id}>
+                    <button
+                      className={`ts-menu-item${current ? " ts-group-assign-current" : ""}`}
+                      disabled={current || spacer.isSpacer}
+                      onClick={() => onSelect(ch.id)}
+                    >
+                      <span className="ts-menu-item-icon">
+                        {current ? "✔️" : spacer.isSpacer ? "➖" : "📁"}
+                      </span>
+                      <span className="ts-menu-item-label">{label}</span>
+                      {current && (
+                        <span className="ts-group-assign-hint">{t("moveClient.current")}</span>
+                      )}
+                      {!current && spacer.isSpacer && (
+                        <span className="ts-group-assign-hint">{t("moveClient.spacer")}</span>
                       )}
                     </button>
                   </li>
@@ -4950,6 +5109,11 @@ function AppInner() {
     clientId: number;
     clientName: string;
   } | null>(null);
+  const [moveClientTarget, setMoveClientTarget] = useState<{
+    clientId: number;
+    clientName: string;
+    channelId: number;
+  } | null>(null);
   const [permissionOverviewOpen, setPermissionOverviewOpen] = useState(false);
   const [permissionOverview, setPermissionOverview] = useState<PermissionOverviewEntry[] | null>(null);
   const [permissionsEditorOpen, setPermissionsEditorOpen] = useState(false);
@@ -5084,6 +5248,8 @@ function AppInner() {
   const [novaMenuOpen, setNovaMenuOpen] = useState(false);
   const novaMenuRef = useRef<HTMLDivElement | null>(null);
   const [favorites, setFavorites] = useState<Favorite[]>(() => loadFavorites());
+  /** Favorite that opened the active session tab; drives ServerQuery visibility. */
+  const [activeFavoriteId, setActiveFavoriteId] = useState<string | null>(null);
   const [favoritesMenuOpen, setFavoritesMenuOpen] = useState(false);
   const [favoritesDialogMode, setFavoritesDialogMode] = useState<
     { kind: "add"; prefill: Omit<Favorite, "id" | "bookmarkName"> } | { kind: "manage" } | null
@@ -5392,6 +5558,7 @@ function AppInner() {
       hasConnected: hasConnectedRef.current,
       previousClients: previousClientsRef.current,
       micWasOn: micOn,
+      favoriteId: activeFavoriteId,
     });
 
   const applyParkedToUi = (parked: ParkedSessionState) => {
@@ -5417,6 +5584,7 @@ function AppInner() {
     setServerChat(parked.serverChat);
     setPmThreads(parked.pmThreads);
     setPokes(parked.pokes);
+    setActiveFavoriteId(parked.favoriteId);
     setActiveTab(parked.chatTab);
     setTalkers(new Set(parked.talkers));
     setWhisperChannelIds(new Set(parked.whisperChannelIds));
@@ -5468,6 +5636,7 @@ function AppInner() {
     hasConnectedRef.current = false;
     previousClientsRef.current = null;
     cleanDisconnectRef.current = false;
+    setActiveFavoriteId(null);
   };
 
   // serverGroups/channelGroups/permissionCatalog/banList/fileBrowser* are
@@ -5597,6 +5766,7 @@ function AppInner() {
     defaultChannel?: string;
     privilegeKey?: string;
     serverType?: ServerType;
+    favoriteId?: string | null;
   }) => {
     const connectHost = overrides?.host ?? host;
     const connectNickname = overrides?.nickname ?? nickname;
@@ -5605,6 +5775,7 @@ function AppInner() {
     const connectDefaultChannel = overrides?.defaultChannel ?? defaultChannel;
     const connectPrivilegeKey = overrides?.privilegeKey ?? privilegeKey;
     const connectServerType = overrides?.serverType ?? serverType;
+    const connectFavoriteId = overrides?.favoriteId !== undefined ? overrides.favoriteId : null;
 
     // Multi-join: keep existing sessions; park the active tab and open a new one.
     if (activeSessionIdRef.current && sessionsRef.current.has(activeSessionIdRef.current)) {
@@ -5612,6 +5783,7 @@ function AppInner() {
     }
 
     clearActiveUi();
+    setActiveFavoriteId(connectFavoriteId);
     hasConnectedRef.current = false;
     setConnecting(true);
     setConnectError(null);
@@ -5660,7 +5832,11 @@ function AppInner() {
         const rec = sessionsRef.current.get(sessionId);
         if (!rec) return;
         if (!rec.parked) {
-          rec.parked = emptyParkedState({ host: connectHost, nickname: connectNickname });
+          rec.parked = emptyParkedState({
+            host: connectHost,
+            nickname: connectNickname,
+            favoriteId: connectFavoriteId,
+          });
         }
         if (data.type === "disconnected") {
           sessionsRef.current.delete(sessionId);
@@ -5731,8 +5907,13 @@ function AppInner() {
           if (prevClients) {
             const prevIds = new Set(prevClients.map((c) => c.id));
             const newIds = new Set(newClients.map((c) => c.id));
-            const joined = newClients.some((c) => !prevIds.has(c.id) && c.name !== connectNickname);
-            const left = prevClients.some((c) => !newIds.has(c.id) && c.name !== connectNickname);
+            // ServerQuery churn is noisy; never play join/leave for those clients.
+            const joined = newClients.some(
+              (c) => !prevIds.has(c.id) && c.name !== connectNickname && !c.isQuery
+            );
+            const left = prevClients.some(
+              (c) => !newIds.has(c.id) && c.name !== connectNickname && !c.isQuery
+            );
             if (joined) void playSound("clientJoin");
             if (left) void playSound("clientLeave");
           }
@@ -6071,12 +6252,14 @@ function AppInner() {
       serverPassword: f.serverPassword,
       channelPassword: f.defaultChannelPassword,
       defaultChannel: f.defaultChannel,
+      favoriteId: f.id,
     });
   };
 
   const saveFavorites = (next: Favorite[]) => {
-    setFavorites(next);
-    localStorage.setItem(FAVORITES_KEY, JSON.stringify(next));
+    const normalized = next.map((f) => normalizeFavorite(f));
+    setFavorites(normalized);
+    localStorage.setItem(FAVORITES_KEY, JSON.stringify(normalized));
   };
 
   const openAddFavorite = () => {
@@ -6088,6 +6271,7 @@ function AppInner() {
         serverPassword,
         defaultChannel,
         defaultChannelPassword: channelPassword,
+        showServerQueryClients: false,
       },
     });
     setFavoritesMenuOpen(false);
@@ -6993,6 +7177,43 @@ function AppInner() {
     socketRef.current?.send(JSON.stringify({ type: "getChannelGroupList" }));
   };
 
+  const handleShowMoveClient = (clientId: number, clientName: string) => {
+    const target = clients.find((c) => c.id === clientId);
+    setMoveClientTarget({
+      clientId,
+      clientName,
+      channelId: target?.channel ?? 0,
+    });
+  };
+
+  const handleMoveClient = (clientId: number, channelId: number) => {
+    const client = clients.find((c) => c.id === clientId);
+    if (client && client.channel === channelId) return;
+    // Moving yourself (e.g. dragging your own row) is a plain channel join,
+    // not an admin action - route it through the normal switch flow so it
+    // only needs join permission and still prompts for a channel password
+    // when required. The `moveClient` command below is for moving OTHER
+    // clients, which - like the native client - bypasses the target
+    // channel's password for whoever holds the move permission.
+    if (clientId === ownClientId) {
+      handleSwitchChannel(channelId);
+      return;
+    }
+    socketRef.current?.send(
+      JSON.stringify({
+        type: "moveClient",
+        clientId,
+        channelId,
+      })
+    );
+  };
+
+  const handleMoveClientToChannel = (channelId: number) => {
+    if (!moveClientTarget) return;
+    handleMoveClient(moveClientTarget.clientId, channelId);
+    setMoveClientTarget(null);
+  };
+
   const handleShowServerGroupAssign = (clientId: number, clientName: string) => {
     setGroupAssignTarget({ kind: "server", clientId, clientName });
     setServerGroups(null);
@@ -7267,6 +7488,26 @@ function AppInner() {
     selfActive && !inputMuted && ownClient?.hasTalkPower
       ? new Set(talkers).add(ownClient.id)
       : talkers;
+  const showServerQueryClients =
+    activeFavoriteId != null &&
+    favorites.some((f) => f.id === activeFavoriteId && f.showServerQueryClients);
+  // clients can be a large, frequently-unchanged list re-scanned on every
+  // render - including on every "talkers" voice-activity update, which has
+  // nothing to do with the client list itself - so memoize on the inputs
+  // that actually affect the result instead of re-filtering/re-reducing it
+  // every time.
+  const treeClients = useMemo(
+    () => (showServerQueryClients ? clients : clients.filter((c) => !c.isQuery)),
+    [clients, showServerQueryClients]
+  );
+  const queryClientCount = useMemo(
+    () => clients.reduce((n, c) => n + (c.isQuery ? 1 : 0), 0),
+    [clients]
+  );
+  const displayClientCount =
+    serverClientsOnline > 0
+      ? serverClientsOnline + (showServerQueryClients ? queryClientCount : 0)
+      : treeClients.length;
   const novaSplash = designTheme === "nova" && !connected;
 
   return (
@@ -8163,6 +8404,16 @@ function AppInner() {
         />
       )}
 
+      {moveClientTarget && (
+        <MoveClientDialog
+          clientName={moveClientTarget.clientName}
+          currentChannelId={moveClientTarget.channelId}
+          channels={channels}
+          onSelect={handleMoveClientToChannel}
+          onClose={() => setMoveClientTarget(null)}
+        />
+      )}
+
       {permissionOverviewOpen && (
         <PermissionOverviewDialog
           entries={permissionOverview}
@@ -8465,6 +8716,18 @@ function AppInner() {
             <span className="ts-menu-item-icon">👉</span>
             <span className="ts-menu-item-label">{t("clientContext.poke")}</span>
           </button>
+          {!clientContextMenu.isSelf && (
+            <button
+              className="ts-menu-item"
+              onClick={() => {
+                handleShowMoveClient(clientContextMenu.clientId, clientContextMenu.clientName);
+                setClientContextMenu(null);
+              }}
+            >
+              <span className="ts-menu-item-icon">🚚</span>
+              <span className="ts-menu-item-label">{t("clientContext.moveTo")}</span>
+            </button>
+          )}
           <button
             className="ts-menu-item"
             onClick={() => {
@@ -8726,7 +8989,7 @@ function AppInner() {
                 </div>
                 <ChannelTree
                   channels={channels}
-                  clients={clients}
+                  clients={treeClients}
                   parent={0}
                   ownClientId={ownClientId ?? ownClient?.id ?? null}
                   talkers={displayTalkers}
@@ -8738,6 +9001,7 @@ function AppInner() {
                   onSwitchChannel={handleSwitchChannel}
                   onOpenPrivateChat={handleOpenPrivateChat}
                   onPokeClient={handlePokeClient}
+                  onMoveClient={handleMoveClient}
                   onClientContextMenu={handleClientContextMenu}
                   onChannelContextMenu={handleChannelContextMenu}
                 />
@@ -8764,14 +9028,12 @@ function AppInner() {
                 serverVersion={serverVersion}
                 serverLicense={serverLicense}
                 serverLicenseId={serverLicenseId}
-                totalClientCount={
-                  serverClientsOnline > 0 ? serverClientsOnline : clients.length
-                }
+                totalClientCount={displayClientCount}
                 totalChannelCount={
                   serverChannelsOnline > 0 ? serverChannelsOnline : channels.length
                 }
                 channels={channels}
-                clients={clients}
+                clients={treeClients}
                 serverGroups={serverGroups}
                 onShowServerConnectionInfo={handleShowServerConnectionInfo}
                 onEditServer={() => setServerEditOpen(true)}
@@ -8784,7 +9046,7 @@ function AppInner() {
 
         <div className="ts-chat-panel">
           {connected && designTheme === "pulse" && (
-            <SpeakingNowBar clients={clients} talkers={displayTalkers} ownClientId={ownClient?.id ?? null} />
+            <SpeakingNowBar clients={treeClients} talkers={displayTalkers} ownClientId={ownClient?.id ?? null} />
           )}
           <div className="ts-chat-messages">
             {activeTab === "channel"

@@ -17,9 +17,9 @@ use tsclientlib::messages::c2s::{
 	OutChannelAddPermPart, OutChannelClientAddPermPart, OutChannelClientDelPermPart,
 	OutChannelClientPermListRequestPart, OutChannelDelPermPart, OutChannelGroupAddPermPart,
 	OutChannelGroupDelPermPart, OutChannelGroupPermListRequestPart, OutChannelPermListRequestPart,
-	OutClientAddPermPart, OutClientDelPermPart, OutClientPermListRequestPart, OutClientPokeRequestPart,
-	OutCreateDirectoryPart, OutDeleteFilePart, OutFileListRequestPart, OutRenameFilePart,
-	OutSendTextMessagePart, OutServerGroupAddPermPart, OutServerGroupDelPermPart,
+	OutClientAddPermPart, OutClientDelPermPart, OutClientMovePart, OutClientPermListRequestPart,
+	OutClientPokeRequestPart, OutCreateDirectoryPart, OutDeleteFilePart, OutFileListRequestPart,
+	OutRenameFilePart, OutSendTextMessagePart, OutServerGroupAddPermPart, OutServerGroupDelPermPart,
 	OutServerGroupPermListRequestPart,
 };
 use tsclientlib::prelude::*;
@@ -103,6 +103,9 @@ struct ClientInfo {
 	/// haven't been individually granted talk power. Always `true` in a
 	/// non-moderated channel.
 	has_talk_power: bool,
+	/// ServerQuery client (`ClientType::Query`). Always included in the
+	/// snapshot; the UI hides these unless the user enables them per favorite.
+	is_query: bool,
 }
 
 /// Payload for the "serveredit " stdin command - every field is optional so
@@ -573,13 +576,13 @@ fn snapshot(con: &data::Connection) -> Event {
 			has_password: ch.has_password.unwrap_or(false),
 		})
 		.collect::<Vec<_>>();
-	// Bookkeeping includes ServerQuery clients (`ClientType::Query`); hide them
-	// from the channel tree / client lists, and from the online-count fallback
-	// below too, so the number shown never counts a client the list doesn't.
+	// Bookkeeping includes ServerQuery clients (`ClientType::Query`). We always
+	// forward them (with `is_query`) so the UI can toggle visibility live from
+	// a favorite setting without reconnecting. Online counts below still exclude
+	// Query by default so the headline matches the default (hidden) tree.
 	let clients = con
 		.clients
 		.values()
-		.filter(|c| !matches!(c.client_type, ClientType::Query { .. }))
 		.map(|c| {
 			// A channel with no talk power requirement at all (the common
 			// case) is never moderated, so everyone can talk regardless of
@@ -605,19 +608,20 @@ fn snapshot(con: &data::Connection) -> Event {
 				channel_group: c.channel_group.0,
 				server_groups: c.server_groups.iter().map(|g| g.0).collect(),
 				has_talk_power,
+				is_query: matches!(c.client_type, ClientType::Query { .. }),
 			}
 		})
 		.collect::<Vec<_>>();
 
 	// Prefer server-reported counters (GTS/TS `virtualserver_*` via notifyserverupdated)
-	// but never under-report vs. the visible (non-Query) client set (stale
-	// optional_data after joins would otherwise freeze the InfoPanel left number).
-	// `virtualserver_clientsonline` usually includes ServerQuery; subtract the
-	// Query clients we filtered from the list so the headline matches the tree.
+	// but never under-report vs. the non-Query client set (stale optional_data
+	// after joins would otherwise freeze the InfoPanel left number).
+	// `virtualserver_clientsonline` usually includes ServerQuery; subtract them
+	// so the default (Query-hidden) headline matches the default tree.
 	let opt = con.server.optional_data.as_ref();
 	let visible_channels = channels.len() as u64;
-	let visible_clients_count = clients.len() as u16;
-	let query_count = (con.clients.len() as u16).saturating_sub(visible_clients_count);
+	let query_count = clients.iter().filter(|c| c.is_query).count() as u16;
+	let visible_clients_count = (clients.len() as u16).saturating_sub(query_count);
 	let server_clients_online = opt
 		.map(|d| {
 			let without_query = d.client_count.saturating_sub(query_count);
@@ -1093,6 +1097,72 @@ async fn run(args: Args) -> Result<()> {
 								}
 							}
 							Err(_) => emit(&Event::Error { message: format!("Invalid client id: {id}") }),
+						}
+					} else if let Some(rest) = l.strip_prefix("moveclient ") {
+						// Move another client (or self) into a channel: clientmove clid=… cid=…
+						// Optional trailing base64 password, same as `switch`.
+						let mut move_args = rest.trim().splitn(3, ' ');
+						let clid_arg = move_args.next().unwrap_or("");
+						let cid_arg = move_args.next().unwrap_or("");
+						let password_arg = move_args.next();
+						match (clid_arg.parse::<u16>(), cid_arg.parse::<u64>()) {
+							(Ok(clid), Ok(cid)) => {
+								let password = password_arg.and_then(|p| {
+									base64::engine::general_purpose::STANDARD
+										.decode(p)
+										.ok()
+										.and_then(|bytes| String::from_utf8(bytes).ok())
+								});
+								let part = match con.get_state() {
+									Ok(state) => match state.clients.get(&ClientId(clid)) {
+										Some(client) => {
+											let mut part = client.client_move(ChannelId(cid));
+											match &password {
+												Some(pwd) => {
+													part = part.set_password(pwd);
+												}
+												None => {
+													part.channel_password =
+														Some(std::borrow::Cow::Borrowed(""));
+												}
+											}
+											Some(part)
+										}
+										None => {
+											// Still try with raw ids if the client left our view.
+											// Carry through the already-decoded password instead of
+											// dropping it - this path is also used for self-moves
+											// via drag-and-drop, which still need the password to
+											// reach the server when the target channel requires one.
+											Some(OutClientMovePart {
+												client_id: ClientId(clid),
+												channel_id: ChannelId(cid),
+												channel_password: Some(match &password {
+													Some(pwd) => Cow::Owned(pwd.clone()),
+													None => Cow::Borrowed(""),
+												}),
+											})
+										}
+									},
+									Err(e) => {
+										emit(&Event::Error {
+											message: format!("Move client failed: {e}"),
+										});
+										None
+									}
+								};
+								if let Some(part) = part {
+									match part.send_with_result(&mut con) {
+										Ok(handle) => {
+											pending_messages.insert(handle, "Move client".into());
+										}
+										Err(e) => emit(&Event::Error { message: e.to_string() }),
+									}
+								}
+							}
+							_ => emit(&Event::Error {
+								message: format!("Malformed moveclient command: {rest}"),
+							}),
 						}
 					} else if l == "away" || l.starts_with("away ") {
 						let message = l.strip_prefix("away").unwrap_or("").trim();
@@ -2292,6 +2362,23 @@ async fn run(args: Args) -> Result<()> {
 					}
 				}
 				Some(Ok(StreamItem::MessageEvent(msg))) => {
+					// Defense in depth: TeaSpeak/GTS may surface notifyclientpoke as an
+					// unhandled MessageEvent if bookkeeping did not mark it handled.
+					if let InMessage::ClientPoke(poke) = &msg {
+						for part in poke.iter() {
+							emit(&Event::Poke {
+								from: part.invoker_name.clone(),
+								message: part.message.clone().unwrap_or_default(),
+							});
+						}
+					} else if let InMessage::ClientPokeNormal(poke) = &msg {
+						for part in poke.iter() {
+							emit(&Event::Poke {
+								from: part.invoker_name.clone(),
+								message: part.message.clone().unwrap_or_default(),
+							});
+						}
+					}
 					if pending_server_log {
 						if let InMessage::ServerLog(log) = &msg {
 							let lines: Vec<String> = log.iter().map(|part| part.log.clone()).collect();

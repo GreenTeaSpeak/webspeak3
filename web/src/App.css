@@ -1787,6 +1787,13 @@
   background: var(--row-hover);
 }
 
+.ts-channel-row.ts-drop-target,
+.ts-channel-row.ts-spacer.ts-drop-target {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  outline: 1px dashed var(--accent);
+  outline-offset: -1px;
+}
+
 /* Channel spacers ([cspacer], [*spacer01], …) — GreenTeaSpeak / TS parity */
 .ts-channel-row.ts-spacer {
   position: relative;
@@ -1897,8 +1904,13 @@
 }
 
 .ts-client-row {
+  cursor: grab;
   color: var(--client-text);
   padding-left: 0;
+}
+
+.ts-client-row:active {
+  cursor: grabbing;
 }
 
 .ts-client-row.ts-self {

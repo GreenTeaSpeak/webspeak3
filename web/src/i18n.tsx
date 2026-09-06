@@ -521,6 +521,7 @@ const translations: Record<Lang, Record<string, string>> = {
 
     "clientContext.privateChat": "Privater Chat",
     "clientContext.poke": "Anstupsen",
+    "clientContext.moveTo": "Verschieben in…",
     "clientContext.copyName": "Namen kopieren",
     "clientContext.connectionInfo": "Verbindungsinformationen anzeigen",
     "clientContext.addWhisperTarget": "Als Whisper-Ziel hinzufügen",
@@ -531,6 +532,11 @@ const translations: Record<Lang, Record<string, string>> = {
     "clientContext.kick": "Vom Server kicken",
     "clientContext.ban": "Bannen",
     "clientContext.notSupported": "Im Web-Client noch nicht unterstützt",
+
+    "moveClient.title": "Verschieben",
+    "moveClient.empty": "Keine Channels verfügbar.",
+    "moveClient.current": "Aktueller Channel",
+    "moveClient.spacer": "Spacer",
 
     "serverContext.connectionInfo": "Serververbindungsinformationen",
     "serverContext.copyAddress": "Serveradresse kopieren",
@@ -1081,6 +1087,7 @@ const translations: Record<Lang, Record<string, string>> = {
 
     "clientContext.privateChat": "Private chat",
     "clientContext.poke": "Poke",
+    "clientContext.moveTo": "Move to…",
     "clientContext.copyName": "Copy name",
     "clientContext.connectionInfo": "Show connection info",
     "clientContext.addWhisperTarget": "Add as whisper target",
@@ -1091,6 +1098,11 @@ const translations: Record<Lang, Record<string, string>> = {
     "clientContext.kick": "Kick from server",
     "clientContext.ban": "Ban",
     "clientContext.notSupported": "Not yet supported in the web client",
+
+    "moveClient.title": "Move",
+    "moveClient.empty": "No channels available.",
+    "moveClient.current": "Current channel",
+    "moveClient.spacer": "Spacer",
 
     "serverContext.connectionInfo": "Server Connection Info",
     "serverContext.copyAddress": "Copy server address",

@@ -50,6 +50,8 @@ export type ClientInfo = {
   channelGroup: number;
   serverGroups: number[];
   hasTalkPower: boolean;
+  /** ServerQuery client; hidden in the tree unless the favorite enables them. */
+  isQuery?: boolean;
 };
 
 export type WhisperLogEntry = {
@@ -92,6 +94,8 @@ export type ParkedSessionState = {
   previousClients: ClientInfo[] | null;
   /** Whether the mic was on for this tab when it was parked, so switching back restores it. */
   micWasOn: boolean;
+  /** Favorite used to open this session (drives ServerQuery visibility). */
+  favoriteId: string | null;
 };
 
 export type SessionTabInfo = {
@@ -143,6 +147,7 @@ export function emptyParkedState(partial?: Partial<ParkedSessionState>): ParkedS
     hasConnected: false,
     previousClients: null,
     micWasOn: false,
+    favoriteId: null,
     ...partial,
   };
 }

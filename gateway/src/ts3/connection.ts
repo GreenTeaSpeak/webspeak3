@@ -37,6 +37,8 @@ export interface ClientInfo {
   channelGroup: number;
   serverGroups: number[];
   hasTalkPower: boolean;
+  /** ServerQuery client; UI may hide these unless enabled per favorite. */
+  isQuery: boolean;
 }
 
 export interface GroupEntry {
@@ -252,6 +254,7 @@ export class Ts3Connection {
           channel_group: number;
           server_groups: number[];
           has_talk_power: boolean;
+          is_query?: boolean;
         }
 
         interface RawChannelInfo {
@@ -424,6 +427,7 @@ export class Ts3Connection {
               channelGroup: c.channel_group,
               serverGroups: c.server_groups,
               hasTalkPower: c.has_talk_power,
+              isQuery: Boolean(c.is_query),
             })),
             ownClientId: event.own_client_id ?? 0,
             serverMaxClients: event.server_max_clients ?? 0,
@@ -548,6 +552,14 @@ export class Ts3Connection {
     // so it can safely contain spaces or other characters.
     const passwordArg = channelPassword ? ` ${Buffer.from(channelPassword, "utf8").toString("base64")}` : "";
     this.child?.stdin.write(`switch ${id}${passwordArg}\n`);
+  }
+
+  async moveClient(clientId: number, channelId: number, channelPassword?: string): Promise<void> {
+    const clid = Number(clientId);
+    const cid = Number(channelId);
+    if (!Number.isFinite(clid) || !Number.isFinite(cid)) return;
+    const passwordArg = channelPassword ? ` ${Buffer.from(channelPassword, "utf8").toString("base64")}` : "";
+    this.child?.stdin.write(`moveclient ${clid} ${cid}${passwordArg}\n`);
   }
 
   async getClientConnectionInfo(clientId: number): Promise<void> {
