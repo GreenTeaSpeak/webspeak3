@@ -1130,10 +1130,17 @@ async fn run(args: Args) -> Result<()> {
 										}
 										None => {
 											// Still try with raw ids if the client left our view.
+											// Carry through the already-decoded password instead of
+											// dropping it - this path is also used for self-moves
+											// via drag-and-drop, which still need the password to
+											// reach the server when the target channel requires one.
 											Some(OutClientMovePart {
 												client_id: ClientId(clid),
 												channel_id: ChannelId(cid),
-												channel_password: Some(Cow::Borrowed("")),
+												channel_password: Some(match &password {
+													Some(pwd) => Cow::Owned(pwd.clone()),
+													None => Cow::Borrowed(""),
+												}),
 											})
 										}
 									},

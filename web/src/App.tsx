@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 
 /** Only dismiss on a genuine backdrop click, not a text-selection drag that
@@ -2397,7 +2397,7 @@ function MoveClientDialog({
                   <li key={ch.id}>
                     <button
                       className={`ts-menu-item${current ? " ts-group-assign-current" : ""}`}
-                      disabled={current}
+                      disabled={current || spacer.isSpacer}
                       onClick={() => onSelect(ch.id)}
                     >
                       <span className="ts-menu-item-icon">
@@ -7189,6 +7189,16 @@ function AppInner() {
   const handleMoveClient = (clientId: number, channelId: number) => {
     const client = clients.find((c) => c.id === clientId);
     if (client && client.channel === channelId) return;
+    // Moving yourself (e.g. dragging your own row) is a plain channel join,
+    // not an admin action - route it through the normal switch flow so it
+    // only needs join permission and still prompts for a channel password
+    // when required. The `moveClient` command below is for moving OTHER
+    // clients, which - like the native client - bypasses the target
+    // channel's password for whoever holds the move permission.
+    if (clientId === ownClientId) {
+      handleSwitchChannel(channelId);
+      return;
+    }
     socketRef.current?.send(
       JSON.stringify({
         type: "moveClient",
@@ -7481,14 +7491,22 @@ function AppInner() {
   const showServerQueryClients =
     activeFavoriteId != null &&
     favorites.some((f) => f.id === activeFavoriteId && f.showServerQueryClients);
-  const treeClients = showServerQueryClients ? clients : clients.filter((c) => !c.isQuery);
-  const queryClientCount = clients.reduce((n, c) => n + (c.isQuery ? 1 : 0), 0);
-  const displayClientCount = showServerQueryClients
-    ? serverClientsOnline > 0
-      ? serverClientsOnline + queryClientCount
-      : treeClients.length
-    : serverClientsOnline > 0
-      ? serverClientsOnline
+  // clients can be a large, frequently-unchanged list re-scanned on every
+  // render - including on every "talkers" voice-activity update, which has
+  // nothing to do with the client list itself - so memoize on the inputs
+  // that actually affect the result instead of re-filtering/re-reducing it
+  // every time.
+  const treeClients = useMemo(
+    () => (showServerQueryClients ? clients : clients.filter((c) => !c.isQuery)),
+    [clients, showServerQueryClients]
+  );
+  const queryClientCount = useMemo(
+    () => clients.reduce((n, c) => n + (c.isQuery ? 1 : 0), 0),
+    [clients]
+  );
+  const displayClientCount =
+    serverClientsOnline > 0
+      ? serverClientsOnline + (showServerQueryClients ? queryClientCount : 0)
       : treeClients.length;
   const novaSplash = designTheme === "nova" && !connected;
 
